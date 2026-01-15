@@ -9,6 +9,8 @@ defmodule QueueOfMatchmaking.Application do
   def start(_type, _args) do
     children = [
       {Phoenix.PubSub, name: QueueOfMatchmaking.PubSub},
+      QueueOfMatchmaking.Horde.Registry,
+      QueueOfMatchmaking.Horde.Supervisor,
       QueueOfMatchmaking.Web.Endpoint
     ]
 
