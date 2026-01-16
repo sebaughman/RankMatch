@@ -5,14 +5,16 @@ defmodule QueueOfMatchmaking.Web.Endpoint do
 
   use Phoenix.Endpoint, otp_app: :queue_of_matchmaking
 
-  socket "/socket", QueueOfMatchmaking.Web.Socket,
+  socket("/socket", QueueOfMatchmaking.Web.Socket,
     websocket: true,
     longpoll: false
+  )
 
-  plug Plug.Parsers,
+  plug(Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Jason
+  )
 
-  plug QueueOfMatchmaking.Web.Router
+  plug(QueueOfMatchmaking.Web.Router)
 end

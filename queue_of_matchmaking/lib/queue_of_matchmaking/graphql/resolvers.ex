@@ -9,20 +9,23 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
 
     with :ok <- validate_input(user_id, rank),
          :ok <- QueueOfMatchmaking.Index.UserIndex.claim(user_id) do
+      # Cleanup rule: From this point forward, any error path MUST call
+      # UserIndex.release(user_id). This will be implemented when routing/enqueue
       {:ok, %{ok: true, error: nil}}
     else
       {:error, :already_queued} ->
         {:ok, %{ok: false, error: "already_queued"}}
 
       {:error, :index_unavailable} ->
-        {:ok, %{ok: false, error: "momentary interuption, try again"}}
+        {:ok, %{ok: false, error: "momentary interruption, try again"}}
 
       {:error, reason} when is_binary(reason) ->
         {:ok, %{ok: false, error: reason}}
     end
   end
 
-  defp validate_input(user_id, rank) when is_binary(user_id) and user_id != "" and is_integer(rank) and rank >= 0 do
+  defp validate_input(user_id, rank)
+       when is_binary(user_id) and user_id != "" and is_integer(rank) and rank >= 0 do
     :ok
   end
 

@@ -1,6 +1,7 @@
 defmodule QueueOfMatchmaking.Index.UserIndex do
   @moduledoc """
   Coordinator for cluster-wide user duplicate prevention.
+  In-memory, cluster-wide best-effort claim tracking; claims are lost on node restart.
   """
 
   use GenServer
@@ -41,10 +42,17 @@ defmodule QueueOfMatchmaking.Index.UserIndex do
       child_spec = QueueOfMatchmaking.Index.UserIndexShard.child_spec(shard_id: shard_id)
 
       case QueueOfMatchmaking.Horde.Supervisor.start_child(child_spec) do
-        {:ok, _pid} -> :ok
-        {:error, {:already_started, _pid}} -> :ok
-        {:error, {:already_present, _}} -> :ok
-        {:error, reason} -> raise "Failed to start user_index_shard #{shard_id}: #{inspect(reason)}"
+        {:ok, _pid} ->
+          :ok
+
+        {:error, {:already_started, _pid}} ->
+          :ok
+
+        {:error, {:already_present, _}} ->
+          :ok
+
+        {:error, reason} ->
+          raise "Failed to start user_index_shard #{shard_id}: #{inspect(reason)}"
       end
     end)
   end
