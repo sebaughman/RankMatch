@@ -5,7 +5,8 @@ defmodule QueueOfMatchmaking.Graphql.ValidationTest do
 
   describe "add_request/2 validation" do
     test "accepts valid userId and rank" do
-      args = %{user_id: "Player123", rank: 1500}
+      user_id = "Player_#{:rand.uniform(1_000_000)}"
+      args = %{user_id: user_id, rank: 1500}
       assert {:ok, %{ok: true, error: nil}} = Resolvers.add_request(args, nil)
     end
 
@@ -22,18 +23,21 @@ defmodule QueueOfMatchmaking.Graphql.ValidationTest do
     end
 
     test "rejects negative rank" do
-      args = %{user_id: "Player123", rank: -1}
+      user_id = "Player_#{:rand.uniform(1_000_000)}"
+      args = %{user_id: user_id, rank: -1}
       assert {:ok, %{ok: false, error: error}} = Resolvers.add_request(args, nil)
       assert error == "rank must be a non-negative integer"
     end
 
     test "accepts rank 0" do
-      args = %{user_id: "Player123", rank: 0}
+      user_id = "Player_#{:rand.uniform(1_000_000)}"
+      args = %{user_id: user_id, rank: 0}
       assert {:ok, %{ok: true, error: nil}} = Resolvers.add_request(args, nil)
     end
 
     test "accepts high rank" do
-      args = %{user_id: "Player123", rank: 10_000}
+      user_id = "Player_#{:rand.uniform(1_000_000)}"
+      args = %{user_id: user_id, rank: 10_000}
       assert {:ok, %{ok: true, error: nil}} = Resolvers.add_request(args, nil)
     end
   end

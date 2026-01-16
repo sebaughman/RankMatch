@@ -7,10 +7,18 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
     user_id = args[:user_id] || args[:userId]
     rank = args[:rank]
 
-    with :ok <- validate_input(user_id, rank) do
+    with :ok <- validate_input(user_id, rank),
+         :ok <- QueueOfMatchmaking.Index.UserIndex.claim(user_id) do
       {:ok, %{ok: true, error: nil}}
     else
-      {:error, reason} -> {:ok, %{ok: false, error: reason}}
+      {:error, :already_queued} ->
+        {:ok, %{ok: false, error: "already_queued"}}
+
+      {:error, :index_unavailable} ->
+        {:ok, %{ok: false, error: "momentary interuption, try again"}}
+
+      {:error, reason} when is_binary(reason) ->
+        {:ok, %{ok: false, error: reason}}
     end
   end
 

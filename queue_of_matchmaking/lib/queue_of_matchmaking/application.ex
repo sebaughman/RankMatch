@@ -11,6 +11,7 @@ defmodule QueueOfMatchmaking.Application do
       {Phoenix.PubSub, name: QueueOfMatchmaking.PubSub},
       QueueOfMatchmaking.Horde.Registry,
       QueueOfMatchmaking.Horde.Supervisor,
+      QueueOfMatchmaking.Index.UserIndex,
       QueueOfMatchmaking.Web.Endpoint
     ]
 
