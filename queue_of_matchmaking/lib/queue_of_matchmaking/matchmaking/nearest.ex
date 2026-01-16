@@ -23,7 +23,12 @@ defmodule QueueOfMatchmaking.Matchmaking.Nearest do
   @doc """
   Finds the best opponent by scanning outward from requester rank.
   """
-  def peek_best_opponent(state, {_uid, requester_rank, _enq} = _requester_ticket, allowed_diff, exclude_user_id) do
+  def peek_best_opponent(
+        state,
+        {_uid, requester_rank, _enq},
+        allowed_diff,
+        exclude_user_id
+      ) do
     ranks = :gb_sets.to_list(state.non_empty_ranks)
 
     case ranks do
@@ -89,7 +94,9 @@ defmodule QueueOfMatchmaking.Matchmaking.Nearest do
 
   # -- same-rank early return --
 
-  defp same_rank_head(%ScanCtx{ranks: ranks, requester_rank: req, left_idx: li, right_idx: ri} = ctx) do
+  defp same_rank_head(
+         %ScanCtx{ranks: ranks, requester_rank: req, left_idx: li, right_idx: ri} = ctx
+       ) do
     case {rank_at(ranks, li), rank_at(ranks, ri)} do
       {^req, _} -> same_rank_try(ctx, req)
       {_, ^req} -> same_rank_try(ctx, req)
@@ -106,7 +113,9 @@ defmodule QueueOfMatchmaking.Matchmaking.Nearest do
 
   # -- main scan loop --
 
-  defp walk_outward(%ScanCtx{scanned: scanned, max_scan: max_scan} = ctx) when scanned >= max_scan, do: ctx
+  defp walk_outward(%ScanCtx{scanned: scanned, max_scan: max_scan} = ctx)
+       when scanned >= max_scan,
+       do: ctx
 
   defp walk_outward(ctx) do
     case next_step(ctx) do
@@ -166,8 +175,11 @@ defmodule QueueOfMatchmaking.Matchmaking.Nearest do
     end
   end
 
-  defp bump_left(%ScanCtx{} = ctx), do: %{ctx | left_idx: ctx.left_idx - 1, scanned: ctx.scanned + 1}
-  defp bump_right(%ScanCtx{} = ctx), do: %{ctx | right_idx: ctx.right_idx + 1, scanned: ctx.scanned + 1}
+  defp bump_left(%ScanCtx{} = ctx),
+    do: %{ctx | left_idx: ctx.left_idx - 1, scanned: ctx.scanned + 1}
+
+  defp bump_right(%ScanCtx{} = ctx),
+    do: %{ctx | right_idx: ctx.right_idx + 1, scanned: ctx.scanned + 1}
 
   # -- candidate evaluation / best tracking --
 
