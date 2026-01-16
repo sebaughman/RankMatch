@@ -1,7 +1,7 @@
 defmodule QueueOfMatchmaking.Matchmaking.State do
   @moduledoc """
   Pure data structure for partition matchmaking state.
-  Manages rank-based queues and provides safe functions for concurrent matching.
+  Manages rank queues and supports safe peeking/removal helpers.
   """
 
   defstruct [
@@ -15,22 +15,9 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
     :config
   ]
 
-  @type ticket :: {user_id :: String.t(), rank :: non_neg_integer(), enq_ms :: integer()}
-  @type t :: %__MODULE__{
-          partition_id: String.t(),
-          range_start: non_neg_integer(),
-          range_end: non_neg_integer(),
-          queues_by_rank: %{non_neg_integer() => :queue.queue()},
-          non_empty_ranks: :gb_sets.set(),
-          queued_count: non_neg_integer(),
-          tick_cursor: :gb_sets.iter() | nil,
-          config: map()
-        }
-
   @doc """
   Creates a new partition state.
   """
-  @spec new(String.t(), non_neg_integer(), non_neg_integer(), map()) :: t()
   def new(partition_id, range_start, range_end, config) do
     %__MODULE__{
       partition_id: partition_id,
@@ -46,11 +33,8 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
 
   @doc """
   Enqueues a ticket at the tail of its rank queue.
-  Used when a new user is coming in.
   """
-  @spec enqueue(t(), ticket()) :: t()
-  def enqueue(state, ticket) do
-    {_user_id, rank, _enq_ms} = ticket
+  def enqueue(state, {_, rank, _} = ticket) do
     queue = Map.get(state.queues_by_rank, rank, :queue.new())
     updated_queue = :queue.in(ticket, queue)
 
@@ -64,11 +48,8 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
 
   @doc """
   Enqueues a ticket at the head of its rank queue.
-  Used for rollback when opponent removal fails.
   """
-  @spec enqueue_front(t(), ticket()) :: t()
-  def enqueue_front(state, ticket) do
-    {_user_id, rank, _enq_ms} = ticket
+  def enqueue_front(state, {_, rank, _} = ticket) do
     queue = Map.get(state.queues_by_rank, rank, :queue.new())
     updated_queue = :queue.in_r(ticket, queue)
 
@@ -82,10 +63,8 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
 
   @doc """
   Removes and returns the head ticket from a rank queue.
-  Updates other state items to reflect that
   Returns {nil, state} if rank has no queued tickets.
   """
-  @spec dequeue_head(t(), non_neg_integer()) :: {ticket() | nil, t()}
   def dequeue_head(state, rank) do
     case Map.get(state.queues_by_rank, rank) do
       nil ->
@@ -128,10 +107,7 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
 
   @doc """
   Atomically removes head ticket if it matches expected ticket.
-  Returns {:ok, new_state} on match, {:error, :mismatch} otherwise.
   """
-  @spec dequeue_head_if_matches(t(), non_neg_integer(), ticket()) ::
-          {:ok, t()} | {:error, :mismatch}
   def dequeue_head_if_matches(state, rank, expected_ticket) do
     case peek_head(state, rank) do
       ^expected_ticket ->
@@ -145,9 +121,7 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
 
   @doc """
   Returns the head ticket of a rank queue without removing it.
-  Returns nil if rank has no queued tickets.
   """
-  @spec peek_head(t(), non_neg_integer()) :: ticket() | nil
   def peek_head(state, rank) do
     case Map.get(state.queues_by_rank, rank) do
       nil ->
@@ -162,9 +136,38 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
   end
 
   @doc """
+  Returns the head ticket unless it belongs to exclude_user_id.
+  If the head is excluded, returns the next ticket (peek-only).
+  """
+  def peek_head_skipping_user(state, rank, exclude_user_id) do
+    case Map.get(state.queues_by_rank, rank) do
+      nil ->
+        nil
+
+      queue ->
+        peek_head_skipping_user_from_queue(queue, exclude_user_id, rank)
+    end
+  end
+
+  defp peek_head_skipping_user_from_queue(queue, exclude_user_id, rank) do
+    case :queue.out(queue) do
+      {:empty, _} ->
+        nil
+
+      {{:value, {^exclude_user_id, ^rank, _}}, rest_queue} ->
+        case :queue.out(rest_queue) do
+          {:empty, _} -> nil
+          {{:value, ticket}, _} -> ticket
+        end
+
+      {{:value, ticket}, _rest_queue} ->
+        ticket
+    end
+  end
+
+  @doc """
   Checks if a rank has queued tickets.
   """
-  @spec rank_present?(t(), non_neg_integer()) :: boolean()
   def rank_present?(state, rank) do
     :gb_sets.is_member(rank, state.non_empty_ranks)
   end
@@ -172,7 +175,6 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
   @doc """
   Returns the set of non-empty ranks for scanning operations.
   """
-  @spec non_empty_ranks(t()) :: :gb_sets.set()
   def non_empty_ranks(state) do
     state.non_empty_ranks
   end
