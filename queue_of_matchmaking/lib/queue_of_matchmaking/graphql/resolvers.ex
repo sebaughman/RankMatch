@@ -62,6 +62,15 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
 
         {:error, :partition_not_found} ->
           release_and_error(user_id, "no_partition")
+
+        {:error, :no_partition} ->
+          release_and_error(user_id, "no_partition")
+
+        {:error, :stale_routing_snapshot} ->
+          release_and_error(user_id, "stale_routing_snapshot")
+
+        {:error, :invalid_rank} ->
+          release_and_error(user_id, "invalid_rank")
       end
     catch
       :exit, _ ->

@@ -82,10 +82,8 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentCoordinator do
   def init(_opts) do
     snapshot = build_snapshot()
 
-    # Only broadcast if not in test environment to avoid timing issues during test setup
-    unless Mix.env() == :test do
-      broadcast_update(snapshot)
-    end
+    # Broadcast update for Router and other subscribers
+    broadcast_update(snapshot)
 
     {:ok, %{snapshot: snapshot}}
   end
