@@ -2,12 +2,9 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
   use ExUnit.Case, async: true
 
   alias QueueOfMatchmaking.Cluster.Assignment
+  alias QueueOfMatchmaking.Config
 
-  @default_config [
-    rank_min: 0,
-    rank_max: 10_000,
-    partition_count: 20
-  ]
+  @default_config Config.cluster_config()
 
   describe "compute_assignments/2" do
     test "returns empty list for empty node list" do
@@ -19,7 +16,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       assignments = Assignment.compute_assignments(nodes, @default_config)
 
       assert length(assignments) == 20
-      assert Enum.all?(assignments, fn a -> a.node == :node1@host end)
+      assert Enum.all?(assignments, fn a -> a.epoch == 1 and a.node == :node1@host end)
     end
 
     test "alternates partitions between two nodes" do
@@ -32,6 +29,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       Enum.with_index(assignments)
       |> Enum.each(fn {assignment, idx} ->
         expected_node = if rem(idx, 2) == 0, do: :node1@host, else: :node2@host
+        assert assignment.epoch == 1
         assert assignment.node == expected_node
       end)
     end
@@ -43,6 +41,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       assert length(assignments) == 20
 
       # Check distribution pattern
+      assert Enum.at(assignments, 0).epoch == 1
       assert Enum.at(assignments, 0).node == :node1@host
       assert Enum.at(assignments, 1).node == :node2@host
       assert Enum.at(assignments, 2).node == :node3@host
@@ -54,6 +53,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       assignments = Assignment.compute_assignments(nodes, @default_config)
 
       first = Enum.at(assignments, 0)
+      assert first.epoch == 1
       assert first.range_start == 0
       assert first.range_end == 499
       assert first.partition_id == "p-00000-00499"
@@ -64,6 +64,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       assignments = Assignment.compute_assignments(nodes, @default_config)
 
       last = Enum.at(assignments, 19)
+      assert last.epoch == 1
       assert last.range_start == 9500
       assert last.range_end == 10_000
       assert last.partition_id == "p-09500-10000"
@@ -73,6 +74,7 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       nodes = [:node1@host]
       assignments = Assignment.compute_assignments(nodes, @default_config)
 
+      assert Enum.at(assignments, 0).epoch == 1
       assert Enum.at(assignments, 0).partition_id == "p-00000-00499"
       assert Enum.at(assignments, 1).partition_id == "p-00500-00999"
       assert Enum.at(assignments, 10).partition_id == "p-05000-05499"
@@ -106,7 +108,9 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       first = Enum.at(assignments, 0)
       last = Enum.at(assignments, 19)
 
+      assert first.epoch == 1
       assert first.range_start == 0
+      assert last.epoch == 1
       assert last.range_end == 10_000
     end
 
@@ -115,12 +119,30 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentTest do
       assignments = Assignment.compute_assignments(nodes, @default_config)
 
       Enum.each(assignments, fn assignment ->
+        assert assignment.epoch == 1
         assert is_binary(assignment.partition_id)
         assert is_integer(assignment.range_start)
         assert is_integer(assignment.range_end)
         assert is_atom(assignment.node)
         assert assignment.range_start <= assignment.range_end
       end)
+    end
+
+    test "uses epoch from config when provided" do
+      custom_config = Keyword.put(@default_config, :epoch, 42)
+      nodes = [:node1@host]
+      assignments = Assignment.compute_assignments(nodes, custom_config)
+
+      assert length(assignments) == 20
+      assert Enum.all?(assignments, fn a -> a.epoch == 42 end)
+    end
+
+    test "defaults to epoch 1 when not in config" do
+      config_without_epoch = Keyword.delete(@default_config, :epoch)
+      nodes = [:node1@host]
+      assignments = Assignment.compute_assignments(nodes, config_without_epoch)
+
+      assert Enum.all?(assignments, fn a -> a.epoch == 1 end)
     end
   end
 end

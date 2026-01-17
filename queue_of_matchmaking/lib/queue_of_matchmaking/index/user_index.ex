@@ -6,6 +6,8 @@ defmodule QueueOfMatchmaking.Index.UserIndex do
 
   use GenServer
 
+  alias QueueOfMatchmaking.Config
+
   @retry_attempts 3
   @retry_delay_ms 20
 
@@ -32,7 +34,7 @@ defmodule QueueOfMatchmaking.Index.UserIndex do
 
   @impl true
   def init(:ok) do
-    shard_count = Application.fetch_env!(:queue_of_matchmaking, :user_index_shard_count)
+    shard_count = Config.user_index_shard_count()
     start_all_shards(shard_count)
     {:ok, %{shard_count: shard_count}}
   end

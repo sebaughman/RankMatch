@@ -1,6 +1,7 @@
 import Config
 
 config :queue_of_matchmaking,
+  epoch: 1,
   rank_min: 0,
   rank_max: 10_000,
   partition_count: 20,
@@ -11,7 +12,6 @@ config :queue_of_matchmaking,
   tick_interval_ms: 25,
   max_tick_attempts: 200,
   max_scan_ranks: 50,
-  rpc_timeout_ms: 100,
   enqueue_timeout_ms: 100,
   backpressure: [
     message_queue_limit: 2_000,

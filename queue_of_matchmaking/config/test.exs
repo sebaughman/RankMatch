@@ -5,6 +5,7 @@ config :queue_of_matchmaking, QueueOfMatchmaking.Web.Endpoint,
   server: true
 
 config :queue_of_matchmaking,
+  epoch: 1,
   rank_min: 0,
   rank_max: 10_000,
   partition_count: 20,

@@ -3,6 +3,7 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
 
   alias QueueOfMatchmaking.Matchmaking.PartitionWorker
   alias QueueOfMatchmaking.Index.UserIndex
+  alias QueueOfMatchmaking.Config
 
   setup do
     # Start required dependencies (only if not already started)
@@ -22,16 +23,8 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       start_supervised!(QueueOfMatchmaking.Web.Endpoint)
     end
 
-    # Build config from application env
-    config = %{
-      tick_interval_ms: Application.fetch_env!(:queue_of_matchmaking, :tick_interval_ms),
-      max_tick_attempts: Application.fetch_env!(:queue_of_matchmaking, :max_tick_attempts),
-      max_scan_ranks: Application.fetch_env!(:queue_of_matchmaking, :max_scan_ranks),
-      widening_step_ms: Application.fetch_env!(:queue_of_matchmaking, :widening_step_ms),
-      widening_step_diff: Application.fetch_env!(:queue_of_matchmaking, :widening_step_diff),
-      widening_cap: Application.fetch_env!(:queue_of_matchmaking, :widening_cap),
-      backpressure: Application.fetch_env!(:queue_of_matchmaking, :backpressure)
-    }
+    # Build config from Config module
+    config = Config.matchmaking_config()
 
     # Start a partition worker for testing
     {:ok, pid} =

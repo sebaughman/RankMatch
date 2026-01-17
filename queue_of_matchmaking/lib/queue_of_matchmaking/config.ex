@@ -23,4 +23,24 @@ defmodule QueueOfMatchmaking.Config do
       }
     }
   end
+
+  @doc """
+  Returns cluster configuration as a keyword list.
+  Used for partition assignment and cluster topology.
+  """
+  def cluster_config do
+    [
+      epoch: Application.fetch_env!(:queue_of_matchmaking, :epoch),
+      rank_min: Application.fetch_env!(:queue_of_matchmaking, :rank_min),
+      rank_max: Application.fetch_env!(:queue_of_matchmaking, :rank_max),
+      partition_count: Application.fetch_env!(:queue_of_matchmaking, :partition_count)
+    ]
+  end
+
+  @doc """
+  Returns the number of user index shards.
+  """
+  def user_index_shard_count do
+    Application.fetch_env!(:queue_of_matchmaking, :user_index_shard_count)
+  end
 end
