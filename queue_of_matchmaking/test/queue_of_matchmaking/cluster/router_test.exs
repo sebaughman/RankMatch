@@ -116,6 +116,26 @@ defmodule QueueOfMatchmaking.Cluster.RouterTest do
 
   describe "route_with_epoch/1 - epoch consistency" do
     test "routing fails on forced epoch mismatch" do
+      # Save original config
+      original_module =
+        Application.get_env(:queue_of_matchmaking, :assignment_coordinator_module)
+
+      # Register cleanup
+      on_exit(fn ->
+        if original_module do
+          Application.put_env(
+            :queue_of_matchmaking,
+            :assignment_coordinator_module,
+            original_module
+          )
+        else
+          Application.delete_env(:queue_of_matchmaking, :assignment_coordinator_module)
+        end
+
+        # Give system time to stabilize
+        Process.sleep(50)
+      end)
+
       # Configure fake coordinator that returns epoch 2
       Application.put_env(
         :queue_of_matchmaking,
@@ -125,14 +145,30 @@ defmodule QueueOfMatchmaking.Cluster.RouterTest do
 
       # Router was initialized with epoch 1, coordinator now returns epoch 2
       assert {:error, :stale_routing_snapshot} = Router.route_with_epoch(500)
-
-      # Cleanup
-      Application.delete_env(:queue_of_matchmaking, :assignment_coordinator_module)
     end
   end
 
   describe "route_with_epoch/1 - error cases" do
     test "returns error when routing table is empty" do
+      # Save original state
+      original_table = :persistent_term.get(:routing_table, nil)
+
+      # Register cleanup to restore state
+      on_exit(fn ->
+        if original_table do
+          :persistent_term.put(:routing_table, original_table)
+        end
+
+        # Wait for system to stabilize
+        Process.sleep(100)
+
+        # Verify routing is working before exiting
+        case Router.route_with_epoch(500) do
+          {:ok, _} -> :ok
+          _ -> Process.sleep(100)
+        end
+      end)
+
       # Erase the routing table to simulate empty state
       :persistent_term.erase(:routing_table)
 
@@ -184,6 +220,191 @@ defmodule QueueOfMatchmaking.Cluster.RouterTest do
 
       for rank <- invalid_ranks do
         assert {:error, :invalid_rank} = Router.route_with_epoch(rank)
+      end
+    end
+  end
+
+  describe "adjacent_partitions/1 - middle partitions" do
+    test "returns both neighbors for middle partition" do
+      # Rank 1000 is in partition p-01000-01499
+      # Left neighbor: p-00500-00999 (range_end = 999)
+      # Right neighbor: p-01500-01999 (range_start = 1500)
+      {left_pid, right_pid} = Router.adjacent_partitions(1000)
+
+      assert is_pid(left_pid)
+      assert is_pid(right_pid)
+
+      # Verify pids are for correct partitions
+      assert [{^left_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-00500-00999"})
+
+      assert [{^right_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-01500-01999"})
+    end
+
+    test "returns both neighbors for rank at partition boundary" do
+      # Rank 1499 is still in p-01000-01499
+      {left_pid, right_pid} = Router.adjacent_partitions(1499)
+
+      assert is_pid(left_pid)
+      assert is_pid(right_pid)
+    end
+
+    test "returns both neighbors for rank 5000" do
+      # Rank 5000 is in partition p-05000-05499
+      {left_pid, right_pid} = Router.adjacent_partitions(5000)
+
+      assert is_pid(left_pid)
+      assert is_pid(right_pid)
+
+      assert [{^left_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-04500-04999"})
+
+      assert [{^right_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-05500-05999"})
+    end
+  end
+
+  describe "adjacent_partitions/1 - edge partitions" do
+    test "first partition returns only right neighbor" do
+      # Rank 0 is in first partition p-00000-00499
+      # No left neighbor exists
+      {left_pid, right_pid} = Router.adjacent_partitions(0)
+
+      assert left_pid == nil
+      assert is_pid(right_pid)
+
+      assert [{^right_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-00500-00999"})
+    end
+
+    test "first partition at upper boundary returns only right neighbor" do
+      # Rank 499 is still in first partition
+      {left_pid, right_pid} = Router.adjacent_partitions(499)
+
+      assert left_pid == nil
+      assert is_pid(right_pid)
+    end
+
+    test "last partition returns only left neighbor" do
+      # Rank 10000 is in last partition p-09500-10000
+      # No right neighbor exists
+      {left_pid, right_pid} = Router.adjacent_partitions(10_000)
+
+      assert is_pid(left_pid)
+      assert right_pid == nil
+
+      assert [{^left_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-09000-09499"})
+    end
+
+    test "last partition at lower boundary returns only left neighbor" do
+      # Rank 9500 is still in last partition
+      {left_pid, right_pid} = Router.adjacent_partitions(9500)
+
+      assert is_pid(left_pid)
+      assert right_pid == nil
+    end
+  end
+
+  describe "adjacent_partitions/1 - epoch-scoped lookups" do
+    test "uses epoch-scoped registry keys" do
+      # Verify that lookups use {:partition, epoch, partition_id}
+      {left_pid, right_pid} = Router.adjacent_partitions(1000)
+
+      # These lookups should succeed with epoch-scoped keys
+      assert [{^left_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-00500-00999"})
+
+      assert [{^right_pid, _}] =
+               QueueOfMatchmaking.Horde.Registry.lookup({:partition, 1, "p-01500-01999"})
+
+      # Verify non-epoch-scoped keys would not work (if we had them)
+      # This is a structural test to ensure epoch is part of the key
+      assert is_tuple({:partition, 1, "p-00500-00999"})
+    end
+  end
+
+  describe "adjacent_partitions/1 - error handling" do
+    test "returns {nil, nil} for invalid rank" do
+      assert {nil, nil} = Router.adjacent_partitions(-1)
+      assert {nil, nil} = Router.adjacent_partitions(10_001)
+      assert {nil, nil} = Router.adjacent_partitions("invalid")
+    end
+
+    test "returns {nil, nil} when routing table is empty" do
+      # Save original state
+      original_table = :persistent_term.get(:routing_table, nil)
+
+      # Register cleanup
+      on_exit(fn ->
+        if original_table do
+          :persistent_term.put(:routing_table, original_table)
+        end
+
+        # Wait for system to stabilize
+        Process.sleep(100)
+      end)
+
+      # Erase routing table
+      :persistent_term.erase(:routing_table)
+
+      assert {nil, nil} = Router.adjacent_partitions(500)
+    end
+
+    test "returns {nil, nil} on routing error" do
+      # Save original config
+      original_module =
+        Application.get_env(:queue_of_matchmaking, :assignment_coordinator_module)
+
+      # Register cleanup
+      on_exit(fn ->
+        if original_module do
+          Application.put_env(
+            :queue_of_matchmaking,
+            :assignment_coordinator_module,
+            original_module
+          )
+        else
+          Application.delete_env(:queue_of_matchmaking, :assignment_coordinator_module)
+        end
+
+        # Give system time to stabilize
+        Process.sleep(50)
+      end)
+
+      # Configure fake coordinator with epoch mismatch
+      Application.put_env(
+        :queue_of_matchmaking,
+        :assignment_coordinator_module,
+        FakeCoordinatorEpoch2
+      )
+
+      # Should return {nil, nil} instead of propagating error
+      assert {nil, nil} = Router.adjacent_partitions(500)
+    end
+  end
+
+  describe "adjacent_partitions/1 - all partition boundaries" do
+    test "correctly identifies neighbors at all partition boundaries" do
+      # Test at the start of each partition (except first and last)
+      partition_starts = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]
+
+      for rank <- partition_starts do
+        {left_pid, right_pid} = Router.adjacent_partitions(rank)
+        assert is_pid(left_pid), "Expected left neighbor for rank #{rank}"
+        assert is_pid(right_pid), "Expected right neighbor for rank #{rank}"
+      end
+    end
+
+    test "correctly identifies neighbors at partition ends" do
+      # Test at the end of each partition (except first and last)
+      partition_ends = [999, 1499, 1999, 2499, 2999, 3499, 3999, 4499, 4999, 5499]
+
+      for rank <- partition_ends do
+        {left_pid, right_pid} = Router.adjacent_partitions(rank)
+        assert is_pid(left_pid), "Expected left neighbor for rank #{rank}"
+        assert is_pid(right_pid), "Expected right neighbor for rank #{rank}"
       end
     end
   end

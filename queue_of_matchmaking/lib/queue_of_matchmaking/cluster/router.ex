@@ -50,6 +50,35 @@ defmodule QueueOfMatchmaking.Cluster.Router do
     {:error, :invalid_rank}
   end
 
+  @doc """
+  Returns neighboring partition pids for cross-partition matching.
+  Returns {left_pid, right_pid} where either can be nil.
+  Best-effort: returns {nil, nil} on routing errors.
+  """
+  def adjacent_partitions(rank) when is_integer(rank) and rank >= 0 do
+    with {:ok, current_route} <- route_with_epoch(rank),
+         {routing_epoch, table} <- :persistent_term.get(@persistent_term_key, {nil, []}) do
+      current = Enum.find(table, fn p -> p.partition_id == current_route.partition_id end)
+
+      if current do
+        left_ref = find_left_neighbor(current, table)
+        right_ref = find_right_neighbor(current, table)
+
+        left_pid = lookup_partition_pid(left_ref, routing_epoch)
+        right_pid = lookup_partition_pid(right_ref, routing_epoch)
+
+        {left_pid, right_pid}
+      else
+        {nil, nil}
+      end
+    else
+      _ -> {nil, nil}
+    end
+  end
+
+  def adjacent_partitions(_rank) do
+    {nil, nil}
+  end
 
   @impl true
   def init(_opts) do
@@ -113,6 +142,27 @@ defmodule QueueOfMatchmaking.Cluster.Router do
         [] -> false
       end
     end)
+  end
+
+  defp find_left_neighbor(current, table) do
+    Enum.find(table, fn partition ->
+      partition.range_end == current.range_start - 1
+    end)
+  end
+
+  defp find_right_neighbor(current, table) do
+    Enum.find(table, fn partition ->
+      partition.range_start == current.range_end + 1
+    end)
+  end
+
+  defp lookup_partition_pid(nil, _epoch), do: nil
+
+  defp lookup_partition_pid(partition, epoch) do
+    case QueueOfMatchmaking.Horde.Registry.lookup({:partition, epoch, partition.partition_id}) do
+      [{pid, _}] -> pid
+      [] -> nil
+    end
   end
 
   defp coordinator_module do
