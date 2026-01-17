@@ -1,6 +1,16 @@
 defmodule QueueOfMatchmaking.Index.UserIndexShard do
   @moduledoc """
-  Shard holding claimed user IDs in memory.
+    Tracks claimed user_ids to enforce cluster-wide single-enqueue semantics.
+
+    IMPORTANT INVARIANT:
+    - Claims are stored in shard process state only (in-memory).
+    - If a PartitionWorker node crashes but the shard process survives,
+      claims MAY become orphaned and block re-enqueue.
+
+    TODO:
+    - Track claim ownership (user_id -> owner_pid).
+    - Monitor owner_pid and auto-release claims on :DOWN.
+    - This is required to guarantee "users may safely re-enqueue after node crash".
   """
 
   use GenServer
