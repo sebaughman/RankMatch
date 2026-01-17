@@ -19,6 +19,18 @@ defmodule QueueOfMatchmaking.Horde.Supervisor do
     Horde.DynamicSupervisor.terminate_child(__MODULE__, pid_or_id)
   end
 
+  @doc """
+  Sets Horde cluster membership for the supervisor.
+  Members should be a list of {node, metadata} tuples.
+  """
+  def set_members(members) do
+    Horde.Cluster.set_members(__MODULE__, members)
+  end
+
+  def members do
+    Horde.Cluster.members(__MODULE__)
+  end
+
   defp supervisor_options do
     [
       name: __MODULE__,

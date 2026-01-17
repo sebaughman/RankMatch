@@ -12,6 +12,7 @@ defmodule QueueOfMatchmaking.Application do
       QueueOfMatchmaking.Horde.Registry,
       QueueOfMatchmaking.Horde.Supervisor,
       QueueOfMatchmaking.Cluster.AssignmentCoordinator,
+      QueueOfMatchmaking.Cluster.Membership,
       QueueOfMatchmaking.Index.UserIndex,
       QueueOfMatchmaking.Cluster.PartitionManager,
       QueueOfMatchmaking.Cluster.Router,

@@ -33,6 +33,14 @@ defmodule QueueOfMatchmaking.Horde.Registry do
     Horde.Cluster.members(__MODULE__)
   end
 
+  @doc """
+  Sets Horde cluster membership for the registry.
+  Members should be a list of {node, metadata} tuples.
+  """
+  def set_members(members) do
+    Horde.Cluster.set_members(__MODULE__, members)
+  end
+
   defp registry_options do
     [
       name: __MODULE__,
