@@ -2,6 +2,12 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   @moduledoc """
   GenServer managing a single partition's matchmaking queue.
   Handles immediate matching on enqueue and periodic tick-based widening.
+
+  ## Epoch-Scoped Identity
+
+  Partition workers are registered in Horde.Registry using epoch-scoped keys:
+  {:partition, epoch, partition_id}. This enables future warm-up scenarios where
+  multiple epochs can run side-by-side without process name collisions.
   """
 
   use GenServer

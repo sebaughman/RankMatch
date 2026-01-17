@@ -1,6 +1,12 @@
 defmodule QueueOfMatchmaking.Horde.Registry do
   @moduledoc """
   Wrapper for Horde.Registry providing cluster-wide process registration.
+
+  ## Epoch-Scoped Partition Identity
+
+  Partitions are registered using epoch-scoped keys: {:partition, epoch, partition_id}.
+  This enables future multi-epoch operation where old and new partition assignments
+  can coexist during warm-up and cutover phases without naming collisions.
   """
 
   def child_spec(_opts) do
@@ -13,6 +19,10 @@ defmodule QueueOfMatchmaking.Horde.Registry do
 
   def via_tuple(key) do
     {:via, Horde.Registry, {__MODULE__, key}}
+  end
+
+  def via_partition(epoch, partition_id) do
+    via_tuple({:partition, epoch, partition_id})
   end
 
   def lookup(key) do

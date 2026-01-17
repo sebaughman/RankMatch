@@ -6,6 +6,7 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
   alias QueueOfMatchmaking.Index.UserIndex
   alias QueueOfMatchmaking.Matchmaking.PartitionWorker
   alias QueueOfMatchmaking.Cluster.Router
+  alias QueueOfMatchmaking.Horde.Registry
   alias QueueOfMatchmaking.Config
 
   def add_request(args, _resolution) do
@@ -41,28 +42,37 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
   end
 
   defp attempt_enqueue(user_id, rank) do
+    timeout = Config.enqueue_timeout_ms()
+
     try do
       with {:ok, route} <- Router.route_with_epoch(rank),
            envelope <- build_envelope(route, user_id, rank),
-           worker_name <- QueueOfMatchmaking.PartitionWorker.FullRange,
-           timeout <- Config.enqueue_timeout_ms() do
-        case PartitionWorker.enqueue(worker_name, envelope, timeout) do
-          :ok ->
-            {:ok, %{ok: true, error: nil}}
+           {:ok, worker_pid} <- lookup_partition(route.epoch, route.partition_id),
+           :ok <- PartitionWorker.enqueue(worker_pid, envelope, timeout) do
+        {:ok, %{ok: true, error: nil}}
+      else
+        {:error, :stale_epoch} ->
+          release_and_error(user_id, "stale_epoch")
 
-          {:error, :stale_epoch} ->
-            release_and_error(user_id, "stale_epoch")
+        {:error, :overloaded} ->
+          release_and_error(user_id, "overloaded")
 
-          {:error, :overloaded} ->
-            release_and_error(user_id, "overloaded")
+        {:error, :out_of_range} ->
+          release_and_error(user_id, "invalid_rank")
 
-          {:error, :out_of_range} ->
-            release_and_error(user_id, "invalid_rank")
-        end
+        {:error, :partition_not_found} ->
+          release_and_error(user_id, "no_partition")
       end
     catch
       :exit, _ ->
         release_and_error(user_id, "overloaded")
+    end
+  end
+
+  defp lookup_partition(epoch, partition_id) do
+    case Registry.lookup({:partition, epoch, partition_id}) do
+      [{pid, _}] -> {:ok, pid}
+      [] -> {:error, :partition_not_found}
     end
   end
 

@@ -6,6 +6,7 @@ defmodule QueueOfMatchmaking.Application do
   use Application
 
   alias QueueOfMatchmaking.Config
+  alias QueueOfMatchmaking.Horde.Registry
 
   @impl true
   def start(_type, _args) do
@@ -20,7 +21,7 @@ defmodule QueueOfMatchmaking.Application do
        range_start: 0,
        range_end: 10_000,
        config: Config.matchmaking_config(),
-       name: QueueOfMatchmaking.PartitionWorker.FullRange},
+       name: Registry.via_partition(1, "p-00000-10000")},
       QueueOfMatchmaking.Web.Endpoint,
       {Absinthe.Subscription, QueueOfMatchmaking.Web.Endpoint}
     ]
