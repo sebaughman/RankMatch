@@ -17,35 +17,43 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
     partition_id = Keyword.fetch!(opts, :partition_id)
     range_start = Keyword.fetch!(opts, :range_start)
     range_end = Keyword.fetch!(opts, :range_end)
+    epoch = Keyword.fetch!(opts, :epoch)
     config = Keyword.fetch!(opts, :config)
     name = Keyword.get(opts, :name)
 
-    GenServer.start_link(__MODULE__, {partition_id, range_start, range_end, config}, name: name)
+    GenServer.start_link(__MODULE__, {partition_id, range_start, range_end, epoch, config},
+      name: name
+    )
   end
 
   @doc """
   Enqueues a user into the partition for matchmaking.
+  Accepts an envelope containing epoch, partition_id, user_id, and rank.
   """
-  def enqueue(pid, user_id, rank, timeout \\ nil) do
+  def enqueue(pid, envelope, timeout \\ nil) do
     timeout = timeout || Application.fetch_env!(:queue_of_matchmaking, :enqueue_timeout_ms)
-    GenServer.call(pid, {:enqueue, user_id, rank}, timeout)
+    GenServer.call(pid, {:enqueue, envelope}, timeout)
   end
 
   @impl true
-  def init({partition_id, range_start, range_end, config}) do
-    state = State.new(partition_id, range_start, range_end, config)
+  def init({partition_id, range_start, range_end, epoch, config}) do
+    state = State.new(partition_id, range_start, range_end, epoch, config)
     schedule_tick(config.tick_interval_ms)
     {:ok, state}
   end
 
   @impl true
-  def handle_call({:enqueue, user_id, rank}, _from, state) do
-    with :ok <- Backpressure.check_overload(state),
-         :ok <- validate_rank_in_range(rank, state) do
-      ticket = {user_id, rank, System.monotonic_time(:millisecond)}
+  def handle_call({:enqueue, envelope}, _from, state) do
+    with :ok <- validate_epoch(envelope.epoch, state.epoch),
+         :ok <- Backpressure.check_overload(state),
+         :ok <- validate_rank_in_range(envelope.rank, state) do
+      ticket = {envelope.user_id, envelope.rank, System.monotonic_time(:millisecond)}
       {reply, new_state} = attempt_immediate_match(ticket, state)
       {:reply, reply, new_state}
     else
+      {:error, :stale_epoch} ->
+        {:reply, {:error, :stale_epoch}, state}
+
       {:error, :overloaded} ->
         {:reply, {:error, :overloaded}, state}
 
@@ -62,6 +70,14 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   end
 
   # -- Enqueue flow --
+
+  defp validate_epoch(request_epoch, state_epoch) do
+    if request_epoch == state_epoch do
+      :ok
+    else
+      {:error, :stale_epoch}
+    end
+  end
 
   defp validate_rank_in_range(rank, state) do
     if rank >= state.range_start and rank <= state.range_end do

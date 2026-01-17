@@ -30,23 +30,41 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
     {:ok, pid} =
       start_supervised(
         {PartitionWorker,
-         partition_id: "test-partition", range_start: 0, range_end: 10_000, config: config}
+         epoch: 1,
+         partition_id: "test-partition",
+         range_start: 0,
+         range_end: 10_000,
+         config: config}
       )
 
     %{worker: pid, config: config}
   end
 
-  describe "enqueue/4" do
+  describe "enqueue/3" do
     test "accepts valid enqueue request", %{worker: worker} do
       assert :ok = UserIndex.claim("user1")
-      assert :ok = PartitionWorker.enqueue(worker, "user1", 1500)
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "user1",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
     end
 
     test "rejects rank out of range", %{worker: worker} do
       assert :ok = UserIndex.claim("user_out_of_range")
 
-      assert {:error, :out_of_range} =
-               PartitionWorker.enqueue(worker, "user_out_of_range", 20_000)
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "user_out_of_range",
+        rank: 20_000
+      }
+
+      assert {:error, :out_of_range} = PartitionWorker.enqueue(worker, envelope)
 
       # Claim should still be held since worker rejected it
       UserIndex.release("user_out_of_range")
@@ -56,8 +74,11 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       assert :ok = UserIndex.claim("user_a")
       assert :ok = UserIndex.claim("user_b")
 
-      assert :ok = PartitionWorker.enqueue(worker, "user_a", 1500)
-      assert :ok = PartitionWorker.enqueue(worker, "user_b", 1500)
+      envelope_a = %{epoch: 1, partition_id: "test-partition", user_id: "user_a", rank: 1500}
+      envelope_b = %{epoch: 1, partition_id: "test-partition", user_id: "user_b", rank: 1500}
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope_a)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_b)
 
       # Give time for match processing
       Process.sleep(50)
@@ -74,8 +95,22 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       assert :ok = UserIndex.claim("user_close_1")
       assert :ok = UserIndex.claim("user_close_2")
 
-      assert :ok = PartitionWorker.enqueue(worker, "user_close_1", 1500)
-      assert :ok = PartitionWorker.enqueue(worker, "user_close_2", 1500)
+      envelope_1 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "user_close_1",
+        rank: 1500
+      }
+
+      envelope_2 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "user_close_2",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope_1)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_2)
 
       Process.sleep(50)
 
@@ -89,7 +124,9 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
 
     test "no self-match", %{worker: worker} do
       assert :ok = UserIndex.claim("solo_user")
-      assert :ok = PartitionWorker.enqueue(worker, "solo_user", 1500)
+
+      envelope = %{epoch: 1, partition_id: "test-partition", user_id: "solo_user", rank: 1500}
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
 
       # Wait to ensure no self-match occurs
       Process.sleep(100)
@@ -99,6 +136,22 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
 
       UserIndex.release("solo_user")
     end
+
+    test "rejects stale epoch", %{worker: worker} do
+      assert :ok = UserIndex.claim("stale_epoch_user")
+
+      envelope = %{
+        epoch: 999,
+        partition_id: "test-partition",
+        user_id: "stale_epoch_user",
+        rank: 1500
+      }
+
+      assert {:error, :stale_epoch} = PartitionWorker.enqueue(worker, envelope)
+
+      # Claim should still be held since worker rejected it
+      UserIndex.release("stale_epoch_user")
+    end
   end
 
   describe "tick processing" do
@@ -106,9 +159,12 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       assert :ok = UserIndex.claim("user_wide_1")
       assert :ok = UserIndex.claim("user_wide_2")
 
+      envelope_1 = %{epoch: 1, partition_id: "test-partition", user_id: "user_wide_1", rank: 1000}
+      envelope_2 = %{epoch: 1, partition_id: "test-partition", user_id: "user_wide_2", rank: 1100}
+
       # Enqueue users with rank difference > 0 (won't match immediately)
-      assert :ok = PartitionWorker.enqueue(worker, "user_wide_1", 1000)
-      assert :ok = PartitionWorker.enqueue(worker, "user_wide_2", 1100)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_1)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_2)
 
       # Wait for widening to allow match (200ms step + processing time)
       Process.sleep(300)
@@ -137,7 +193,15 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       |> Enum.with_index(1)
       |> Enum.each(fn {user, idx} ->
         assert :ok = UserIndex.claim(user)
-        assert :ok = PartitionWorker.enqueue(worker, user, 2000 + idx * 10)
+
+        envelope = %{
+          epoch: 1,
+          partition_id: "test-partition",
+          user_id: user,
+          rank: 2000 + idx * 10
+        }
+
+        assert :ok = PartitionWorker.enqueue(worker, envelope)
       end)
 
       # Wait for tick processing
@@ -160,8 +224,15 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       # For now, we just verify the error path exists
       assert :ok = UserIndex.claim("backpressure_test")
 
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "backpressure_test",
+        rank: 5000
+      }
+
       # Normal enqueue should work
-      result = PartitionWorker.enqueue(worker, "backpressure_test", 5000)
+      result = PartitionWorker.enqueue(worker, envelope)
       assert result in [:ok, {:error, :overloaded}]
 
       if result == {:error, :overloaded} do
@@ -175,8 +246,22 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       assert :ok = UserIndex.claim("match_user_1")
       assert :ok = UserIndex.claim("match_user_2")
 
-      assert :ok = PartitionWorker.enqueue(worker, "match_user_1", 3000)
-      assert :ok = PartitionWorker.enqueue(worker, "match_user_2", 3000)
+      envelope_1 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "match_user_1",
+        rank: 3000
+      }
+
+      envelope_2 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "match_user_2",
+        rank: 3000
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope_1)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_2)
 
       # Wait for match
       Process.sleep(100)

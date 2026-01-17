@@ -8,6 +8,7 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
     :partition_id,
     :range_start,
     :range_end,
+    :epoch,
     :queues_by_rank,
     :non_empty_ranks,
     :queued_count,
@@ -18,11 +19,12 @@ defmodule QueueOfMatchmaking.Matchmaking.State do
   @doc """
   Creates a new partition state.
   """
-  def new(partition_id, range_start, range_end, config) do
+  def new(partition_id, range_start, range_end, epoch, config) do
     %__MODULE__{
       partition_id: partition_id,
       range_start: range_start,
       range_end: range_end,
+      epoch: epoch,
       queues_by_rank: %{},
       non_empty_ranks: :gb_sets.empty(),
       queued_count: 0,

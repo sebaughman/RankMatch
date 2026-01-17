@@ -6,7 +6,7 @@ defmodule QueueOfMatchmaking.Matchmaking.NearestTest do
   describe "peek_best_opponent/4" do
     setup do
       config = %{max_scan_ranks: 50}
-      state = State.new("test-partition", 0, 10000, config)
+      state = State.new("test-partition", 0, 10000, 1, config)
       {:ok, state: state, config: config}
     end
 
@@ -142,7 +142,7 @@ defmodule QueueOfMatchmaking.Matchmaking.NearestTest do
   describe "take_best_opponent/2" do
     setup do
       config = %{max_scan_ranks: 50}
-      state = State.new("test-partition", 0, 10000, config)
+      state = State.new("test-partition", 0, 10000, 1, config)
       {:ok, state: state}
     end
 

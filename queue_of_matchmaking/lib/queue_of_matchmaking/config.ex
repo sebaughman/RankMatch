@@ -43,4 +43,11 @@ defmodule QueueOfMatchmaking.Config do
   def user_index_shard_count do
     Application.fetch_env!(:queue_of_matchmaking, :user_index_shard_count)
   end
+
+  @doc """
+  Returns the enqueue timeout in milliseconds.
+  """
+  def enqueue_timeout_ms do
+    Application.fetch_env!(:queue_of_matchmaking, :enqueue_timeout_ms)
+  end
 end

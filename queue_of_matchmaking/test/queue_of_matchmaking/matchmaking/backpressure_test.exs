@@ -80,7 +80,7 @@ defmodule QueueOfMatchmaking.Matchmaking.BackpressureTest do
       ]
     }
 
-    State.new("test-partition", 0, 1000, config)
+    State.new("test-partition", 0, 1000, 1, config)
     |> Map.put(:queued_count, queued_count)
   end
 

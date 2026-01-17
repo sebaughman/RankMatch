@@ -5,7 +5,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "new/4" do
     test "creates empty state with correct fields" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       assert state.partition_id == "p-0000-0499"
       assert state.range_start == 0
@@ -19,7 +19,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "enqueue/2" do
     test "enqueues ticket to new rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -30,7 +30,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "enqueues multiple tickets to same rank (FIFO)" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 100, 2000}
 
@@ -44,7 +44,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "enqueues tickets to different ranks" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 200, 2000}
 
@@ -61,7 +61,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "enqueue_front/2" do
     test "enqueues ticket to head of existing queue" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 100, 2000}
 
@@ -75,7 +75,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "enqueues ticket to head of empty rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue_front(state, ticket)
@@ -88,7 +88,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "dequeue_head/2" do
     test "dequeues head ticket from rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -100,7 +100,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "dequeues head and leaves remaining tickets" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 100, 2000}
 
@@ -118,7 +118,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns nil for non-existent rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       {dequeued, final_state} = State.dequeue_head(state, 100)
 
@@ -127,7 +127,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns nil for empty rank queue" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -141,7 +141,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "dequeue_head_if_matches/3" do
     test "dequeues when head matches expected ticket" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -153,7 +153,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns mismatch when head does not match" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 100, 2000}
 
@@ -164,7 +164,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns mismatch for non-existent rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       result = State.dequeue_head_if_matches(state, 100, ticket)
@@ -173,7 +173,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns mismatch for empty rank queue" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 100, 2000}
 
@@ -187,7 +187,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "peek_head/2" do
     test "returns head ticket without removing it" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -199,7 +199,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns nil for non-existent rank" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       peeked = State.peek_head(state, 100)
 
@@ -209,7 +209,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "rank_present?/2" do
     test "returns true for rank with tickets" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -218,13 +218,13 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns false for rank without tickets" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       refute State.rank_present?(state, 100)
     end
 
     test "returns false after all tickets dequeued" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket = {"user1", 100, 1000}
 
       new_state = State.enqueue(state, ticket)
@@ -236,7 +236,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "non_empty_ranks/1" do
     test "returns empty set for new state" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       ranks = State.non_empty_ranks(state)
 
@@ -244,7 +244,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
     end
 
     test "returns set with enqueued ranks" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       ticket1 = {"user1", 100, 1000}
       ticket2 = {"user2", 200, 2000}
 
@@ -263,7 +263,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "queued_count invariant" do
     test "maintains accurate count through enqueue/dequeue operations" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
 
       # Enqueue 3 tickets
       state =
@@ -297,7 +297,7 @@ defmodule QueueOfMatchmaking.Matchmaking.StateTest do
 
   describe "rollback scenario" do
     test "enqueue_front preserves fairness after failed match" do
-      state = State.new("p-0000-0499", 0, 499, %{})
+      state = State.new("p-0000-0499", 0, 499, 1, %{})
       requester = {"user1", 100, 1000}
       other = {"user2", 100, 2000}
 
