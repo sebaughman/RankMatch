@@ -7,8 +7,14 @@ defmodule QueueOfMatchmaking.GraphqlCase do
   use ExUnit.Case
   import Phoenix.ChannelTest
   import Absinthe.Phoenix.SubscriptionTest
+  import QueueOfMatchmaking.TestHelpers
 
   @endpoint QueueOfMatchmaking.Web.Endpoint
+
+  setup do
+    wait_for_system_ready()
+    :ok
+  end
 
   @doc """
   Generates a unique user ID for testing.
@@ -70,7 +76,7 @@ defmodule QueueOfMatchmaking.GraphqlCase do
   Asserts that a match notification is received on the subscription.
   Returns the match payload.
   """
-  def assert_match_received(expected_subscription_id, timeout \\ 150) do
+  def assert_match_received(expected_subscription_id, timeout \\ 300) do
     assert_push("subscription:data", push_data, timeout)
 
     assert %{

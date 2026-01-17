@@ -5,9 +5,6 @@ defmodule QueueOfMatchmaking.Application do
 
   use Application
 
-  alias QueueOfMatchmaking.Config
-  alias QueueOfMatchmaking.Horde.Registry
-
   @impl true
   def start(_type, _args) do
     children = [
@@ -15,15 +12,9 @@ defmodule QueueOfMatchmaking.Application do
       QueueOfMatchmaking.Horde.Registry,
       QueueOfMatchmaking.Horde.Supervisor,
       QueueOfMatchmaking.Cluster.AssignmentCoordinator,
-      QueueOfMatchmaking.Cluster.Router,
       QueueOfMatchmaking.Index.UserIndex,
-      {QueueOfMatchmaking.Matchmaking.PartitionWorker,
-       epoch: 1,
-       partition_id: "p-00000-10000",
-       range_start: 0,
-       range_end: 10_000,
-       config: Config.matchmaking_config(),
-       name: Registry.via_partition(1, "p-00000-10000")},
+      QueueOfMatchmaking.Cluster.PartitionManager,
+      QueueOfMatchmaking.Cluster.Router,
       QueueOfMatchmaking.Web.Endpoint,
       {Absinthe.Subscription, QueueOfMatchmaking.Web.Endpoint}
     ]

@@ -5,8 +5,8 @@ defmodule QueueOfMatchmaking.Cluster.RouterTest do
   alias QueueOfMatchmaking.Cluster.AssignmentCoordinator
 
   setup do
-    # Wait for Router to initialize and populate routing table
-    Process.sleep(100)
+    # Wait for system to be fully ready
+    QueueOfMatchmaking.TestHelpers.wait_for_system_ready()
     :ok
   end
 

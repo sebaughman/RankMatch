@@ -54,9 +54,9 @@ defmodule QueueOfMatchmaking.Cluster.Router do
   @impl true
   def init(_opts) do
     Phoenix.PubSub.subscribe(@pubsub, @topic)
-    Process.sleep(10)
 
-    snapshot = coordinator_module().snapshot()
+    # Wait for partitions to be registered before building routing table
+    snapshot = wait_for_valid_snapshot()
     table = build_routing_table(snapshot)
 
     :persistent_term.put(@persistent_term_key, {snapshot.epoch, table})
@@ -92,6 +92,27 @@ defmodule QueueOfMatchmaking.Cluster.Router do
            node: partition.node
          }}
     end
+  end
+
+  defp wait_for_valid_snapshot(attempts \\ 30, delay \\ 10) do
+    snapshot = coordinator_module().snapshot()
+
+    if snapshot_has_registered_partitions?(snapshot) or attempts == 0 do
+      snapshot
+    else
+      Process.sleep(delay)
+      wait_for_valid_snapshot(attempts - 1, delay)
+    end
+  end
+
+  defp snapshot_has_registered_partitions?(snapshot) do
+    # Verify at least one partition is registered
+    Enum.any?(snapshot.assignments, fn assignment ->
+      case QueueOfMatchmaking.Horde.Registry.lookup({:partition, assignment.epoch, assignment.partition_id}) do
+        [{_pid, _}] -> true
+        [] -> false
+      end
+    end)
   end
 
   defp coordinator_module do
