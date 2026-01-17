@@ -4,6 +4,7 @@ defmodule QueueOfMatchmaking.Web.Endpoint do
   """
 
   use Phoenix.Endpoint, otp_app: :queue_of_matchmaking
+  use Absinthe.Phoenix.Endpoint
 
   socket("/socket", QueueOfMatchmaking.Web.Socket,
     websocket: true,

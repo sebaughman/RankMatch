@@ -18,8 +18,9 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
     range_start = Keyword.fetch!(opts, :range_start)
     range_end = Keyword.fetch!(opts, :range_end)
     config = Keyword.fetch!(opts, :config)
+    name = Keyword.get(opts, :name)
 
-    GenServer.start_link(__MODULE__, {partition_id, range_start, range_end, config})
+    GenServer.start_link(__MODULE__, {partition_id, range_start, range_end, config}, name: name)
   end
 
   @doc """
@@ -90,43 +91,65 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   # -- Tick flow --
 
   defp process_tick(state) do
-    iterator = :gb_sets.iterator(state.non_empty_ranks)
-    process_tick_attempts(state, iterator, 0)
+    process_best_attempts(state, 0)
   end
 
-  defp process_tick_attempts(state, iterator, attempts_count) do
-    max_attempts = state.config.max_tick_attempts
-
-    if attempts_count >= max_attempts do
+  defp process_best_attempts(state, attempts) do
+    if attempts >= state.config.max_tick_attempts do
       state
     else
-      case :gb_sets.next(iterator) do
-        :none ->
+      case find_global_best_pair(state) do
+        nil ->
           state
 
-        {rank, next_iterator} ->
-          new_state = process_rank(state, rank)
-          process_tick_attempts(new_state, next_iterator, attempts_count + 1)
+        {requester_ticket, opponent_ticket} ->
+          new_state = attempt_match_from_tick(state, requester_ticket, opponent_ticket)
+          process_best_attempts(new_state, attempts + 1)
       end
     end
   end
 
-  defp process_rank(state, rank) do
-    case State.peek_head(state, rank) do
-      nil ->
-        state
+  defp find_global_best_pair(state) do
+    ranks = :gb_sets.to_list(state.non_empty_ranks)
 
-      {user_id, _rank, enq_ms} = requester_ticket ->
-        age_ms = System.monotonic_time(:millisecond) - enq_ms
-        allowed_diff = Widening.allowed_diff(age_ms, state.config)
+    Enum.reduce(ranks, nil, fn rank, best ->
+      case State.peek_head(state, rank) do
+        nil ->
+          best
 
-        case Nearest.peek_best_opponent(state, requester_ticket, allowed_diff, user_id) do
-          nil ->
-            state
+        {user_id, _r, enq_ms} = requester ->
+          age_ms = System.monotonic_time(:millisecond) - enq_ms
+          allowed = Widening.allowed_diff(age_ms, state.config)
 
-          opponent_ticket ->
-            attempt_match_from_tick(state, requester_ticket, opponent_ticket)
-        end
+          case Nearest.peek_best_opponent(state, requester, allowed, user_id) do
+            nil ->
+              best
+
+            opponent ->
+              diff = abs(elem(opponent, 1) - elem(requester, 1))
+              choose_better_pair(best, {requester, opponent, diff})
+          end
+      end
+    end)
+    |> case do
+      nil -> nil
+      {req, opp, _diff} -> {req, opp}
+    end
+  end
+
+  defp choose_better_pair(nil, cand), do: cand
+
+  defp choose_better_pair({b_req, b_opp, b_diff} = best, {c_req, c_opp, c_diff} = cand) do
+    {_b_uid, _b_rank, b_enq} = b_req
+    {c_uid, _c_rank, c_enq} = c_req
+
+    cond do
+      c_diff < b_diff -> cand
+      c_diff > b_diff -> best
+      c_enq < b_enq -> cand
+      c_enq > b_enq -> best
+      c_uid < elem(b_req, 0) -> cand
+      true -> best
     end
   end
 

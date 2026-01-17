@@ -12,8 +12,8 @@ defmodule QueueOfMatchmaking.Notifications.MatchPublisher do
   def publish_match({user1_id, rank1, _enq1}, {user2_id, rank2, _enq2}) do
     payload = %{
       users: [
-        %{userId: user1_id, userRank: rank1},
-        %{userId: user2_id, userRank: rank2}
+        %{user_id: user1_id, user_rank: rank1},
+        %{user_id: user2_id, user_rank: rank2}
       ]
     }
 
@@ -26,10 +26,15 @@ defmodule QueueOfMatchmaking.Notifications.MatchPublisher do
   defp publish_to_user(user_id, payload) do
     topic = Topics.topic_for_user(user_id)
 
-    Absinthe.Subscription.publish(
-      QueueOfMatchmaking.Web.Endpoint,
-      payload,
-      matchFound: topic
-    )
+    try do
+      Absinthe.Subscription.publish(
+        QueueOfMatchmaking.Web.Endpoint,
+        payload,
+        match_found: topic
+      )
+    rescue
+      ArgumentError ->
+        :ok
+    end
   end
 end

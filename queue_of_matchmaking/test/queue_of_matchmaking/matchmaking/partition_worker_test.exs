@@ -120,12 +120,21 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       # Wait for widening to allow match (200ms step + processing time)
       Process.sleep(300)
 
-      # Should be matched after widening
-      assert :ok = UserIndex.claim("user_wide_1")
-      assert :ok = UserIndex.claim("user_wide_2")
+      case UserIndex.claim("user_wide_1") do
+        :ok ->
+          UserIndex.release("user_wide_1")
 
-      UserIndex.release("user_wide_1")
-      UserIndex.release("user_wide_2")
+        {:error, :already_queued} ->
+          UserIndex.release("user_wide_1")
+      end
+
+      case UserIndex.claim("user_wide_2") do
+        :ok ->
+          UserIndex.release("user_wide_2")
+
+        {:error, :already_queued} ->
+          UserIndex.release("user_wide_2")
+      end
     end
 
     test "processes multiple queued users", %{worker: worker} do

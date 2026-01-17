@@ -6,6 +6,14 @@ defmodule QueueOfMatchmaking.Graphql.Schema do
   use Absinthe.Schema
   import_types(QueueOfMatchmaking.Graphql.Types)
 
+  def context(ctx) do
+    Map.put(ctx, :pubsub, QueueOfMatchmaking.Web.Endpoint)
+  end
+
+  def plugins do
+    [Absinthe.Middleware.Batch] ++ Absinthe.Plugin.defaults()
+  end
+
   query do
     field :health, :string do
       resolve(fn _, _ -> {:ok, "ok"} end)

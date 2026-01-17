@@ -1,7 +1,15 @@
 defmodule QueueOfMatchmaking.Graphql.ValidationTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias QueueOfMatchmaking.Graphql.Resolvers
+
+  setup_all do
+    # Restart application to ensure clean state between test modules
+    :ok = Application.stop(:queue_of_matchmaking)
+    {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
+    Process.sleep(100)
+    :ok
+  end
 
   describe "add_request/2 validation" do
     test "accepts valid userId and rank" do

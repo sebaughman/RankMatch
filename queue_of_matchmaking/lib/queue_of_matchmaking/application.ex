@@ -5,6 +5,8 @@ defmodule QueueOfMatchmaking.Application do
 
   use Application
 
+  alias QueueOfMatchmaking.Config
+
   @impl true
   def start(_type, _args) do
     children = [
@@ -12,7 +14,14 @@ defmodule QueueOfMatchmaking.Application do
       QueueOfMatchmaking.Horde.Registry,
       QueueOfMatchmaking.Horde.Supervisor,
       QueueOfMatchmaking.Index.UserIndex,
-      QueueOfMatchmaking.Web.Endpoint
+      {QueueOfMatchmaking.Matchmaking.PartitionWorker,
+       partition_id: "full_range",
+       range_start: 0,
+       range_end: 10_000,
+       config: Config.matchmaking_config(),
+       name: QueueOfMatchmaking.PartitionWorker.FullRange},
+      QueueOfMatchmaking.Web.Endpoint,
+      {Absinthe.Subscription, QueueOfMatchmaking.Web.Endpoint}
     ]
 
     opts = [strategy: :one_for_one, name: QueueOfMatchmaking.Supervisor]

@@ -3,6 +3,14 @@ defmodule QueueOfMatchmaking.Graphql.DuplicateTest do
 
   alias QueueOfMatchmaking.Graphql.Resolvers
 
+  setup_all do
+    # Restart application to ensure clean state between test modules
+    :ok = Application.stop(:queue_of_matchmaking)
+    {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
+    Process.sleep(100)
+    :ok
+  end
+
   setup do
     # Give shards time to start
     Process.sleep(100)
@@ -19,9 +27,12 @@ defmodule QueueOfMatchmaking.Graphql.DuplicateTest do
 
     test "rejects duplicate request for same user" do
       user_id = "player_#{:rand.uniform(1_000_000)}"
-      args = %{user_id: user_id, rank: 1500}
+      # Use different ranks to prevent immediate matching
+      args = %{user_id: user_id, rank: 5000}
 
       assert {:ok, %{ok: true, error: nil}} = Resolvers.add_request(args, nil)
+      # Small delay to ensure first request is processed
+      Process.sleep(10)
       assert {:ok, %{ok: false, error: "already_queued"}} = Resolvers.add_request(args, nil)
     end
 

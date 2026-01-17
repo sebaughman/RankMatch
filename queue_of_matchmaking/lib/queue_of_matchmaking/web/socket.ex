@@ -7,6 +7,12 @@ defmodule QueueOfMatchmaking.Web.Socket do
   use Absinthe.Phoenix.Socket, schema: QueueOfMatchmaking.Graphql.Schema
 
   def connect(_params, socket, _connect_info) do
+    socket =
+      Absinthe.Phoenix.Socket.put_options(socket,
+        schema: QueueOfMatchmaking.Graphql.Schema,
+        context: %{pubsub: QueueOfMatchmaking.Web.Endpoint}
+      )
+
     {:ok, socket}
   end
 
