@@ -122,4 +122,26 @@ defmodule QueueOfMatchmaking.GraphqlCase do
       0 -> :ok
     end
   end
+
+  @doc """
+  Waits for the Phoenix endpoint to be ready.
+  Polls with exponential backoff to ensure WebSocket/subscription infrastructure is initialized.
+  """
+  def wait_for_endpoint(retries \\ 50) do
+    # Check if endpoint process is alive and registered
+    case Process.whereis(@endpoint) do
+      nil ->
+        if retries > 0 do
+          Process.sleep(10)
+          wait_for_endpoint(retries - 1)
+        else
+          raise "Endpoint not ready after #{50 * 10}ms"
+        end
+
+      _pid ->
+        # Give a small additional delay for subscription infrastructure
+        Process.sleep(50)
+        :ok
+    end
+  end
 end

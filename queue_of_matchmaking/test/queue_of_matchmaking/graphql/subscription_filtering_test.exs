@@ -13,7 +13,7 @@ defmodule QueueOfMatchmaking.Graphql.SubscriptionFilteringTest do
     # Restart application to ensure clean state between test modules
     :ok = Application.stop(:queue_of_matchmaking)
     {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
-    Process.sleep(100)
+    wait_for_endpoint()
     :ok
   end
 
@@ -21,7 +21,7 @@ defmodule QueueOfMatchmaking.Graphql.SubscriptionFilteringTest do
     # Restart application before each test to prevent state leakage within module
     :ok = Application.stop(:queue_of_matchmaking)
     {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
-    Process.sleep(100)
+    wait_for_endpoint()
     :ok
   end
 

@@ -15,6 +15,7 @@ defmodule QueueOfMatchmaking.Application do
       QueueOfMatchmaking.Horde.Registry,
       QueueOfMatchmaking.Horde.Supervisor,
       QueueOfMatchmaking.Index.UserIndex,
+      QueueOfMatchmaking.Cluster.AssignmentCoordinator,
       {QueueOfMatchmaking.Matchmaking.PartitionWorker,
        epoch: 1,
        partition_id: "p-00000-10000",
