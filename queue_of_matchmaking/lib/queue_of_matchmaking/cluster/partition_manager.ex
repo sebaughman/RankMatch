@@ -50,7 +50,8 @@ defmodule QueueOfMatchmaking.Cluster.PartitionManager do
      %{
        active_epoch: snapshot.epoch,
        assignments: assignments,
-       local_partitions: local_partitions
+       local_partitions: local_partitions,
+       reconcile_scheduled?: false
      }}
   end
 
@@ -58,12 +59,8 @@ defmodule QueueOfMatchmaking.Cluster.PartitionManager do
   def handle_call(:rebalance, _from, state) do
     snapshot = AssignmentCoordinator.snapshot()
 
-    state =
-      state
-      |> maybe_update_epoch(snapshot.epoch)
-      |> reconcile(snapshot)
-
-    {:reply, :ok, state}
+    new_state = do_reconcile(state, snapshot)
+    {:reply, :ok, new_state}
   end
 
   @impl true
@@ -81,11 +78,31 @@ defmodule QueueOfMatchmaking.Cluster.PartitionManager do
   @impl true
   def handle_info({:assignments_updated, snapshot}, state) do
     Logger.debug("assignments_updated received: epoch=#{snapshot.epoch}")
-    # Future: Could trigger automatic reconciliation here
-    {:noreply, state}
+
+    if state.reconcile_scheduled? do
+      Logger.debug("Auto-reconcile already scheduled, skipping")
+      {:noreply, state}
+    else
+      Logger.info("Leader scheduling auto-reconcile in 25ms")
+      Process.send_after(self(), {:auto_rebalance, snapshot}, 25)
+      {:noreply, %{state | reconcile_scheduled?: true}}
+    end
+  end
+
+  @impl true
+  def handle_info({:auto_rebalance, snapshot}, state) do
+    Logger.debug("Executing auto-reconcile")
+    new_state = do_reconcile(state, snapshot)
+    {:noreply, %{new_state | reconcile_scheduled?: false}}
   end
 
   # Private Helpers
+
+  defp do_reconcile(state, snapshot) do
+    state
+    |> maybe_update_epoch(snapshot.epoch)
+    |> reconcile(snapshot)
+  end
 
   defp maybe_update_epoch(state, epoch) when state.active_epoch == epoch, do: state
 

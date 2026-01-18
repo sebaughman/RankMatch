@@ -6,8 +6,6 @@ defmodule QueueOfMatchmaking.Cluster.Membership do
   - Updates Horde cluster membership (Registry + Supervisor)
   - Triggers AssignmentCoordinator refresh
   - Does not call PartitionManager directly (coordinator-driven architecture)
-
-  TODO: Automatic reconciliation after Leader is implemented.
   """
 
   use GenServer

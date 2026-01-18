@@ -5,13 +5,13 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentCoordinator do
 
   TODO: Later becomes Horde-managed singleton for HA.
   TODO: Multi-epoch operation (warm-up, cutover, cleanup).
-  TODO: Automatic refresh on membership changes.
   TODO: State machine for cutover orchestration.
   """
 
   use GenServer
   require Logger
 
+  alias QueueOfMatchmaking.Cluster.Leader
   alias QueueOfMatchmaking.Cluster.Assignment
   alias QueueOfMatchmaking.Config
 
@@ -152,6 +152,9 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentCoordinator do
   end
 
   defp broadcast_update(snapshot) do
-    Phoenix.PubSub.broadcast(@pubsub, @topic, {:assignments_updated, snapshot})
+    case Leader.am_leader?() do
+      true -> Phoenix.PubSub.broadcast(@pubsub, @topic, {:assignments_updated, snapshot})
+      false -> :ok
+    end
   end
 end

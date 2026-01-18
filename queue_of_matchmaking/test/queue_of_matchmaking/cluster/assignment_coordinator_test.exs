@@ -165,6 +165,72 @@ defmodule QueueOfMatchmaking.Cluster.AssignmentCoordinatorTest do
     end
   end
 
+  describe "leader-gated broadcast" do
+    test "leader node broadcasts assignments_updated on refresh" do
+      # In single-node test environment, current node is always leader
+      AssignmentCoordinator.subscribe()
+
+      :ok = AssignmentCoordinator.refresh()
+
+      # Leader should broadcast
+      assert_receive {:assignments_updated, snapshot}, 1000
+      assert snapshot.epoch == 1
+      assert is_list(snapshot.assignments)
+      assert length(snapshot.assignments) == 20
+    end
+
+    test "broadcast message contains complete snapshot structure" do
+      AssignmentCoordinator.subscribe()
+
+      AssignmentCoordinator.refresh()
+
+      assert_receive {:assignments_updated, snapshot}, 1000
+
+      # Verify snapshot has all required fields
+      assert Map.has_key?(snapshot, :epoch)
+      assert Map.has_key?(snapshot, :spec)
+      assert Map.has_key?(snapshot, :nodes)
+      assert Map.has_key?(snapshot, :assignments)
+      assert Map.has_key?(snapshot, :computed_at_ms)
+
+      # Verify spec structure
+      assert snapshot.spec.rank_min == 0
+      assert snapshot.spec.rank_max == 10_000
+      assert snapshot.spec.partition_count == 20
+    end
+
+    test "snapshot is updated locally regardless of broadcast" do
+      # Even if broadcast is gated, local snapshot should always update
+      snapshot_before = AssignmentCoordinator.snapshot()
+      timestamp_before = snapshot_before.computed_at_ms
+
+      Process.sleep(10)
+
+      :ok = AssignmentCoordinator.refresh()
+
+      snapshot_after = AssignmentCoordinator.snapshot()
+      timestamp_after = snapshot_after.computed_at_ms
+
+      # Snapshot should be updated locally
+      assert timestamp_after > timestamp_before
+      assert snapshot_after.epoch == snapshot_before.epoch
+    end
+
+    test "multiple rapid refreshes each trigger broadcast (no debounce at coordinator level)" do
+      AssignmentCoordinator.subscribe()
+
+      # Trigger multiple rapid refreshes
+      AssignmentCoordinator.refresh()
+      AssignmentCoordinator.refresh()
+      AssignmentCoordinator.refresh()
+
+      # Should receive 3 broadcasts (coordinator doesn't debounce)
+      assert_receive {:assignments_updated, _}, 1000
+      assert_receive {:assignments_updated, _}, 1000
+      assert_receive {:assignments_updated, _}, 1000
+    end
+  end
+
   describe "subscribe/0" do
     test "returns :ok" do
       assert AssignmentCoordinator.subscribe() == :ok

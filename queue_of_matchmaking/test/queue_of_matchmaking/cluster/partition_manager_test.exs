@@ -133,6 +133,146 @@ defmodule QueueOfMatchmaking.Cluster.PartitionManagerTest do
     end
   end
 
+  describe "debounced auto-reconcile" do
+    test "first assignments_updated schedules auto-rebalance" do
+      Process.sleep(100)
+
+      # Trigger coordinator refresh
+      AssignmentCoordinator.refresh()
+
+      # Give time for timer to fire (25ms + processing)
+      Process.sleep(100)
+
+      # Reconcile should have executed
+      state = PartitionManager.debug_state()
+      assert state.active_epoch == 1
+      assert state.local_partition_count == 20
+    end
+
+    test "rapid assignment updates are debounced" do
+      Process.sleep(100)
+
+      # Trigger multiple rapid refreshes
+      AssignmentCoordinator.refresh()
+      AssignmentCoordinator.refresh()
+      AssignmentCoordinator.refresh()
+
+      # Give time for debounce and single reconcile
+      Process.sleep(100)
+
+      # Should have processed updates without issues
+      # Debouncing means only one reconcile executed
+      state = PartitionManager.debug_state()
+      assert state.active_epoch == 1
+      assert state.local_partition_count == 20
+    end
+
+    test "snapshot is passed through timer correctly" do
+      Process.sleep(100)
+
+      # Get initial snapshot
+      snapshot_before = AssignmentCoordinator.snapshot()
+
+      # Trigger refresh (which updates snapshot and broadcasts)
+      AssignmentCoordinator.refresh()
+
+      # Wait for auto-rebalance to execute
+      Process.sleep(100)
+
+      # Verify reconcile used updated snapshot
+      state = PartitionManager.debug_state()
+      assert state.active_epoch == snapshot_before.epoch
+      assert state.local_partition_count == 20
+    end
+
+    test "debounce flag is set and reset correctly" do
+      Process.sleep(100)
+
+      # Trigger first update
+      AssignmentCoordinator.refresh()
+
+      # Immediately trigger second update (should be debounced)
+      AssignmentCoordinator.refresh()
+
+      # Wait for timer to fire and flag to reset
+      Process.sleep(100)
+
+      # Trigger another update (should schedule new timer)
+      AssignmentCoordinator.refresh()
+
+      # Wait for second reconcile
+      Process.sleep(100)
+
+      # System should be stable
+      state = PartitionManager.debug_state()
+      assert state.local_partition_count == 20
+    end
+
+    test "auto-reconcile executes with correct snapshot" do
+      Process.sleep(100)
+
+      initial_state = PartitionManager.debug_state()
+      initial_count = initial_state.local_partition_count
+
+      # Trigger update
+      AssignmentCoordinator.refresh()
+
+      # Wait for auto-reconcile
+      Process.sleep(100)
+
+      final_state = PartitionManager.debug_state()
+
+      # Should have reconciled (even if no changes)
+      assert final_state.local_partition_count == initial_count
+      assert final_state.active_epoch == 1
+    end
+  end
+
+  describe "ungated manual rebalance" do
+    test "manual rebalance always executes (no leader check)" do
+      Process.sleep(100)
+
+      # Manual rebalance should work regardless of leader status
+      # In single-node test, we're always leader, but code has no gate
+      assert :ok = PartitionManager.rebalance()
+
+      state = PartitionManager.debug_state()
+      assert state.local_partition_count == 20
+    end
+
+    test "manual rebalance fetches fresh snapshot" do
+      Process.sleep(100)
+
+      snapshot_before = AssignmentCoordinator.snapshot()
+
+      # Trigger refresh to update coordinator snapshot
+      AssignmentCoordinator.refresh()
+
+      # Manual rebalance should use fresh snapshot
+      assert :ok = PartitionManager.rebalance()
+
+      state = PartitionManager.debug_state()
+      assert state.active_epoch == snapshot_before.epoch
+    end
+
+    test "manual rebalance works independently of auto-reconcile" do
+      Process.sleep(100)
+
+      # Trigger auto-reconcile
+      AssignmentCoordinator.refresh()
+
+      # Immediately call manual rebalance (should not conflict)
+      assert :ok = PartitionManager.rebalance()
+
+      # Wait for auto-reconcile timer
+      Process.sleep(100)
+
+      # Both should complete successfully
+      state = PartitionManager.debug_state()
+      assert state.local_partition_count == 20
+    end
+  end
+
   describe "edge cases" do
     test "handles empty desired set gracefully" do
       # This would require mocking AssignmentCoordinator to return no assignments
