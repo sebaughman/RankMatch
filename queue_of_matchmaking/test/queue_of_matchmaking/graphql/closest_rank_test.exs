@@ -26,13 +26,13 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
   end
 
   describe "closest rank selection" do
-    test "matches with diff 1 instead of diff 20" do
+    test "matches with closest rank difference" do
       user_a = unique_user_id("closest_a")
       user_b = unique_user_id("closest_b")
       user_c = unique_user_id("closest_c")
 
-      {_socket_a, sub_id_a} = subscribe_to_match(user_a)
-      {_socket_b, _sub_id_b} = subscribe_to_match(user_b)
+      {_socket_a, _sub_id_a} = subscribe_to_match(user_a)
+      {_socket_b, sub_id_b} = subscribe_to_match(user_b)
       {_socket_c, sub_id_c} = subscribe_to_match(user_c)
 
       assert_request_ok(add_request(user_a, 1500))
@@ -41,13 +41,13 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
       Process.sleep(10)
       assert_request_ok(add_request(user_c, 1499))
 
-      users_a = assert_match_received(sub_id_a, 300)
+      users_b = assert_match_received(sub_id_b, 300)
       users_c = assert_match_received(sub_id_c, 300)
 
-      matched_ids = extract_user_ids(users_a)
-      assert matched_ids == Enum.sort([user_a, user_c])
+      matched_ids = extract_user_ids(users_b)
+      assert matched_ids == Enum.sort([user_b, user_c])
 
-      assert users_a == users_c
+      assert users_b == users_c
 
       refute_match_received(50)
     end
