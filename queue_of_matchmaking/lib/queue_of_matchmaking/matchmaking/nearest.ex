@@ -206,7 +206,7 @@ defmodule QueueOfMatchmaking.Matchmaking.Nearest do
     end
   end
 
-  defp better?({c_user, c_rank, c_enq}, c_diff, {b_user, b_rank, b_enq}, b_diff) do
+  def better?({c_user, c_rank, c_enq}, c_diff, {b_user, b_rank, b_enq}, b_diff) do
     cond do
       c_diff < b_diff -> true
       c_diff > b_diff -> false

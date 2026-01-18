@@ -12,6 +12,7 @@ config :queue_of_matchmaking,
   tick_interval_ms: 25,
   max_tick_attempts: 200,
   max_scan_ranks: 50,
+  rpc_timeout_ms: 100,
   enqueue_timeout_ms: 100,
   backpressure: [
     message_queue_limit: 2_000,

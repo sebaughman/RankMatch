@@ -274,4 +274,208 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorkerTest do
       UserIndex.release("match_user_2")
     end
   end
+
+  describe "peek_nearest RPC" do
+    test "returns opponent when available", %{worker: worker} do
+      assert :ok = UserIndex.claim("peek_target")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "peek_target",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      # Peek for opponent near rank 1500
+      assert {:ok, {"peek_target", 1500, _enq_ms}} =
+               PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+    end
+
+    test "returns nil when queue empty", %{worker: worker} do
+      # Peek when no users in queue
+      assert {:ok, nil} = PartitionWorker.peek_nearest(worker, 1500, 10, "any_user", 1)
+    end
+
+    test "rejects epoch mismatch", %{worker: worker} do
+      assert :ok = UserIndex.claim("peek_epoch_test")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "peek_epoch_test",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      # Peek with wrong epoch
+      assert {:error, :epoch_mismatch} =
+               PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 999)
+
+      UserIndex.release("peek_epoch_test")
+    end
+
+    test "does not modify state (pure peek)", %{worker: worker} do
+      assert :ok = UserIndex.claim("peek_pure_test")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "peek_pure_test",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      # Peek multiple times
+      assert {:ok, {"peek_pure_test", 1500, _}} =
+               PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      assert {:ok, {"peek_pure_test", 1500, _}} =
+               PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      # User should still be in queue (verify by duplicate enqueue attempt)
+      assert {:error, :already_queued} = UserIndex.claim("peek_pure_test")
+
+      UserIndex.release("peek_pure_test")
+    end
+
+    test "excludes specified user from results", %{worker: worker} do
+      assert :ok = UserIndex.claim("peek_exclude_1")
+      assert :ok = UserIndex.claim("peek_exclude_2")
+
+      envelope_1 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "peek_exclude_1",
+        rank: 1500
+      }
+
+      envelope_2 = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "peek_exclude_2",
+        rank: 1505
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope_1)
+      assert :ok = PartitionWorker.enqueue(worker, envelope_2)
+
+      # Peek excluding user 1, should return user 2
+      assert {:ok, {"peek_exclude_2", 1505, _}} =
+               PartitionWorker.peek_nearest(worker, 1500, 10, "peek_exclude_1", 1)
+
+      UserIndex.release("peek_exclude_1")
+      UserIndex.release("peek_exclude_2")
+    end
+  end
+
+  describe "reserve RPC" do
+    test "removes exact match successfully", %{worker: worker} do
+      # Use unique user ID to avoid conflicts with other tests
+      user_id = "reserve_exact_#{:erlang.unique_integer([:positive])}"
+
+      assert :ok = UserIndex.claim(user_id)
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: user_id,
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      # Get the ticket details
+      {:ok, {^user_id, 1500, enq_ms}} =
+        PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      # Reserve with exact match
+      assert {:ok, {^user_id, 1500, ^enq_ms}} =
+               PartitionWorker.reserve(worker, user_id, 1500, enq_ms, 1)
+
+      # Reserve removes user from queue but does NOT release the claim
+      # The caller (cross-partition tick) is responsible for calling finalize_match()
+
+      # Verify user is removed from queue (peek returns nil)
+      assert {:ok, nil} = PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      # Verify claim is still held (caller's responsibility to release via finalize_match)
+      assert {:error, :already_queued} = UserIndex.claim(user_id)
+
+      # Clean up (simulate what finalize_match would do)
+      UserIndex.release(user_id)
+    end
+
+    test "returns not_found on mismatch", %{worker: worker} do
+      assert :ok = UserIndex.claim("reserve_mismatch")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "reserve_mismatch",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      # Try to reserve with wrong enq_ms
+      assert {:error, :not_found} =
+               PartitionWorker.reserve(worker, "reserve_mismatch", 1500, 999_999, 1)
+
+      # User should still be in queue
+      assert {:error, :already_queued} = UserIndex.claim("reserve_mismatch")
+
+      UserIndex.release("reserve_mismatch")
+    end
+
+    test "rejects epoch mismatch", %{worker: worker} do
+      assert :ok = UserIndex.claim("reserve_epoch_test")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "reserve_epoch_test",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      {:ok, {_, _, enq_ms}} =
+        PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      # Try to reserve with wrong epoch
+      assert {:error, :epoch_mismatch} =
+               PartitionWorker.reserve(worker, "reserve_epoch_test", 1500, enq_ms, 999)
+
+      UserIndex.release("reserve_epoch_test")
+    end
+
+    test "handles concurrent reserve (one succeeds, one fails)", %{worker: worker} do
+      assert :ok = UserIndex.claim("reserve_concurrent")
+
+      envelope = %{
+        epoch: 1,
+        partition_id: "test-partition",
+        user_id: "reserve_concurrent",
+        rank: 1500
+      }
+
+      assert :ok = PartitionWorker.enqueue(worker, envelope)
+
+      {:ok, {_, _, enq_ms}} =
+        PartitionWorker.peek_nearest(worker, 1500, 10, "other_user", 1)
+
+      # First reserve should succeed
+      assert {:ok, _} = PartitionWorker.reserve(worker, "reserve_concurrent", 1500, enq_ms, 1)
+
+      # Second reserve should fail (ticket already removed)
+      assert {:error, :not_found} =
+               PartitionWorker.reserve(worker, "reserve_concurrent", 1500, enq_ms, 1)
+
+      UserIndex.release("reserve_concurrent")
+    end
+  end
 end

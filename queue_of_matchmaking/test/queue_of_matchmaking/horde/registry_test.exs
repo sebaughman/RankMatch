@@ -15,8 +15,14 @@ defmodule QueueOfMatchmaking.Horde.RegistryTest do
       {:ok, pid1} =
         Agent.start_link(fn -> :epoch1 end, name: Registry.via_partition(1, partition_id))
 
+      # Small sleep to allow registration to stabilize in Horde
+      Process.sleep(10)
+
       {:ok, pid2} =
         Agent.start_link(fn -> :epoch2 end, name: Registry.via_partition(2, partition_id))
+
+      # Small sleep to allow registration to stabilize in Horde
+      Process.sleep(10)
 
       assert pid1 != pid2
 

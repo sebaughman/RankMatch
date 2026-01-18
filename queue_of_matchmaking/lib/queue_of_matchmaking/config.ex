@@ -50,4 +50,11 @@ defmodule QueueOfMatchmaking.Config do
   def enqueue_timeout_ms do
     Application.fetch_env!(:queue_of_matchmaking, :enqueue_timeout_ms)
   end
+
+  @doc """
+  Returns the RPC timeout in milliseconds for cross-partition calls.
+  """
+  def rpc_timeout_ms do
+    Application.fetch_env!(:queue_of_matchmaking, :rpc_timeout_ms)
+  end
 end

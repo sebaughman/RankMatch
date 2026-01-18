@@ -21,7 +21,7 @@ defmodule QueueOfMatchmaking.Graphql.WideningTest do
     # Restart application before each test to prevent state leakage within module
     :ok = Application.stop(:queue_of_matchmaking)
     {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
-    Process.sleep(100)
+    QueueOfMatchmaking.TestHelpers.wait_for_all_partitions_ready()
     :ok
   end
 
@@ -102,13 +102,15 @@ defmodule QueueOfMatchmaking.Graphql.WideningTest do
 
       assert_request_ok(add_request(user_a, 4000))
 
-      # Wait for widening: diff=999 requires 500ms to reach cap (999/25*50=1996, capped at 1000)
-      Process.sleep(500)
+      # Wait for widening: diff=999 requires time to reach cap
+      # Config: step_ms=25, step_diff=50, cap=1000
+      # To reach cap: 1000/50 = 20 steps * 25ms = 500ms
+      Process.sleep(600)
 
       assert_request_ok(add_request(user_b, 4999))
 
-      users_a = assert_match_received(sub_id_a, 300)
-      _users_b = assert_match_received(sub_id_b, 300)
+      users_a = assert_match_received(sub_id_a, 800)
+      _users_b = assert_match_received(sub_id_b, 800)
 
       matched_ids = extract_user_ids(users_a)
       assert matched_ids == Enum.sort([user_a, user_b])

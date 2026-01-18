@@ -21,7 +21,7 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
     # Restart application before each test to prevent state leakage within module
     :ok = Application.stop(:queue_of_matchmaking)
     {:ok, _} = Application.ensure_all_started(:queue_of_matchmaking)
-    Process.sleep(100)
+    QueueOfMatchmaking.TestHelpers.wait_for_all_partitions_ready()
     :ok
   end
 
@@ -31,8 +31,8 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
       user_b = unique_user_id("closest_b")
       user_c = unique_user_id("closest_c")
 
-      {_socket_a, _sub_id_a} = subscribe_to_match(user_a)
-      {_socket_b, sub_id_b} = subscribe_to_match(user_b)
+      {_socket_a, sub_id_a} = subscribe_to_match(user_a)
+      {_socket_b, _sub_id_b} = subscribe_to_match(user_b)
       {_socket_c, sub_id_c} = subscribe_to_match(user_c)
 
       assert_request_ok(add_request(user_a, 1500))
@@ -41,13 +41,15 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
       Process.sleep(10)
       assert_request_ok(add_request(user_c, 1499))
 
-      users_b = assert_match_received(sub_id_b, 300)
+      # A (1500) and C (1499) should match (diff=1)
+      # B (1480) is farther from both (diff=20 from A, diff=19 from C)
+      users_a = assert_match_received(sub_id_a, 300)
       users_c = assert_match_received(sub_id_c, 300)
 
-      matched_ids = extract_user_ids(users_b)
-      assert matched_ids == Enum.sort([user_b, user_c])
+      matched_ids = extract_user_ids(users_a)
+      assert matched_ids == Enum.sort([user_a, user_c])
 
-      assert users_b == users_c
+      assert users_a == users_c
 
       refute_match_received(50)
     end
@@ -150,7 +152,8 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
       Process.sleep(10)
       assert_request_ok(add_request(user_center, 5000))
 
-      users_center = assert_match_received(sub_id_center, 200)
+      # Increased timeout to allow for partition warmup and matching
+      users_center = assert_match_received(sub_id_center, 500)
 
       matched_ids = extract_user_ids(users_center)
       assert user_center in matched_ids

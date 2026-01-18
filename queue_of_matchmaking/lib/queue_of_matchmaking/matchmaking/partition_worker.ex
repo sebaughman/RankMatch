@@ -11,10 +11,13 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   """
 
   use GenServer
+  require Logger
 
-  alias QueueOfMatchmaking.Matchmaking.{State, Nearest, Widening, Backpressure}
+  alias QueueOfMatchmaking.Matchmaking.{State, Nearest, Widening, Backpressure, Helpers}
   alias QueueOfMatchmaking.Notifications.MatchPublisher
   alias QueueOfMatchmaking.Index.UserIndex
+  alias QueueOfMatchmaking.Cluster.Router
+  alias QueueOfMatchmaking.Config
 
   @doc """
   Starts a partition worker.
@@ -37,8 +40,36 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   Accepts an envelope containing epoch, partition_id, user_id, and rank.
   """
   def enqueue(pid, envelope, timeout \\ nil) do
-    timeout = timeout || Application.fetch_env!(:queue_of_matchmaking, :enqueue_timeout_ms)
+    timeout = timeout || Config.enqueue_timeout_ms()
     GenServer.call(pid, {:enqueue, envelope}, timeout)
+  end
+
+  @doc """
+  Peeks the best opponent for cross-partition matching.
+  Returns {:ok, ticket | nil} or {:error, :epoch_mismatch}.
+  """
+  def peek_nearest(pid, rank, allowed_diff, exclude_user_id, epoch, timeout \\ nil) do
+    timeout = timeout || Config.rpc_timeout_ms()
+
+    GenServer.call(
+      pid,
+      {:peek_nearest, rank, allowed_diff, exclude_user_id, epoch},
+      timeout
+    )
+  end
+
+  @doc """
+  Atomically reserves a specific ticket if still at head of queue.
+  Returns {:ok, ticket} or {:error, :not_found | :epoch_mismatch}.
+  """
+  def reserve(pid, user_id, rank, enq_ms, epoch, timeout \\ nil) do
+    timeout = timeout || Config.rpc_timeout_ms()
+
+    GenServer.call(
+      pid,
+      {:reserve, user_id, rank, enq_ms, epoch},
+      timeout
+    )
   end
 
   @impl true
@@ -66,6 +97,51 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
       {:error, :out_of_range} ->
         {:reply, {:error, :out_of_range}, state}
     end
+  end
+
+  @impl true
+  def handle_call({:peek_nearest, rank, allowed_diff, exclude_user_id, request_epoch}, _from, state) do
+    case validate_epoch(request_epoch, state.epoch) do
+      {:error, :stale_epoch} ->
+        {:reply, {:error, :epoch_mismatch}, state}
+
+      :ok ->
+        # Create synthetic requester with realistic timestamp
+        synthetic_ticket = {"_peek_", rank, System.monotonic_time(:millisecond)}
+
+        opponent = Nearest.peek_best_opponent(
+          state,
+          synthetic_ticket,
+          allowed_diff,
+          exclude_user_id
+        )
+
+        {:reply, {:ok, opponent}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:reserve, user_id, rank, enq_ms, request_epoch}, _from, state) do
+    case validate_epoch(request_epoch, state.epoch) do
+      {:error, :stale_epoch} ->
+        {:reply, {:error, :epoch_mismatch}, state}
+
+      :ok ->
+        ticket = {user_id, rank, enq_ms}
+
+        case State.dequeue_head_if_matches(state, rank, ticket) do
+          {:ok, new_state} ->
+            {:reply, {:ok, ticket}, new_state}
+
+          {:error, :mismatch} ->
+            {:reply, {:error, :not_found}, state}
+        end
+    end
+  end
+
+  @impl true
+  def handle_call(:health_check, _from, state) do
+    {:reply, :ok, state}
   end
 
   @impl true
@@ -124,8 +200,8 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
         nil ->
           state
 
-        {requester_ticket, opponent_ticket} ->
-          new_state = attempt_match_from_tick(state, requester_ticket, opponent_ticket)
+        {requester_ticket, opponent_ticket, opponent_source} ->
+          new_state = attempt_match_from_tick(state, requester_ticket, opponent_ticket, opponent_source)
           process_best_attempts(new_state, attempts + 1)
       end
     end
@@ -134,7 +210,7 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   defp find_global_best_pair(state) do
     ranks = :gb_sets.to_list(state.non_empty_ranks)
 
-    Enum.reduce(ranks, nil, fn rank, best ->
+    best = Enum.reduce(ranks, nil, fn rank, best ->
       case State.peek_head(state, rank) do
         nil ->
           best
@@ -143,52 +219,102 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
           age_ms = System.monotonic_time(:millisecond) - enq_ms
           allowed = Widening.allowed_diff(age_ms, state.config)
 
-          case Nearest.peek_best_opponent(state, requester, allowed, user_id) do
-            nil ->
-              best
+          local_opponent = Nearest.peek_best_opponent(state, requester, allowed, user_id)
+          adjacent_candidates = peek_adjacent_for_tick(requester, allowed, state)
+          all_candidates = Helpers.combine_candidates(local_opponent, adjacent_candidates)
 
-            opponent ->
-              diff = abs(elem(opponent, 1) - elem(requester, 1))
-              choose_better_pair(best, {requester, opponent, diff})
-          end
+          Helpers.choose_best(requester, all_candidates, best)
       end
     end)
-    |> case do
+
+
+    case best do
       nil -> nil
-      {req, opp, _diff} -> {req, opp}
+      {req, opp, source, _diff} -> {req, opp, source}
     end
   end
 
-  defp choose_better_pair(nil, cand), do: cand
+  defp peek_adjacent_for_tick({user_id, rank, _}, allowed_diff, state) do
+    {left_pid, right_pid} = Router.adjacent_partitions(rank)
+    peek_adjacent_partitions(left_pid, right_pid, {user_id, rank, 0}, allowed_diff, state.epoch)
+  end
 
-  defp choose_better_pair({b_req, b_opp, b_diff} = best, {c_req, c_opp, c_diff} = cand) do
-    {_b_uid, _b_rank, b_enq} = b_req
-    {c_uid, _c_rank, c_enq} = c_req
+  defp peek_adjacent_partitions(left_pid, right_pid, {user_id, rank, _}, allowed_diff, epoch) do
+    timeout = Config.rpc_timeout_ms()
 
-    cond do
-      c_diff < b_diff -> cand
-      c_diff > b_diff -> best
-      c_enq < b_enq -> cand
-      c_enq > b_enq -> best
-      c_uid < elem(b_req, 0) -> cand
-      true -> best
+    left_result = safe_peek(left_pid, rank, allowed_diff, user_id, epoch, timeout)
+    right_result = safe_peek(right_pid, rank, allowed_diff, user_id, epoch, timeout)
+
+    [left_result, right_result]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp safe_peek(nil, _rank, _allowed_diff, _exclude, _epoch, _timeout), do: nil
+
+  defp safe_peek(pid, rank, allowed_diff, exclude_user_id, epoch, timeout) do
+    try do
+      case __MODULE__.peek_nearest(pid, rank, allowed_diff, exclude_user_id, epoch, timeout) do
+        {:ok, nil} -> nil
+        {:ok, ticket} -> {pid, ticket}
+        {:error, :epoch_mismatch} -> nil
+        {:error, _} -> nil
+      end
+    catch
+      :exit, _ ->
+        Logger.debug("Cross-partition peek RPC failed (timeout/noproc)")
+        nil
     end
   end
 
-  defp attempt_match_from_tick(state, {_, req_rank, _} = requester_ticket, opponent_ticket) do
+  defp attempt_match_from_tick(state, {_, req_rank, _} = requester_ticket, opponent_ticket, opponent_source) do
     case State.dequeue_head_if_matches(state, req_rank, requester_ticket) do
       {:ok, state_after_req} ->
-        case Nearest.take_best_opponent(state_after_req, opponent_ticket) do
-          {:ok, final_state} ->
-            finalize_match(requester_ticket, opponent_ticket)
-            final_state
+        case opponent_source do
+          :local ->
+            finalize_local_opponent(state_after_req, requester_ticket, opponent_ticket)
 
-          {:error, :mismatch} ->
-            State.enqueue_front(state_after_req, requester_ticket)
+          {:remote, remote_pid} ->
+            finalize_remote_opponent(state_after_req, requester_ticket, opponent_ticket, remote_pid, state.epoch)
         end
 
       {:error, :mismatch} ->
         state
+    end
+  end
+
+  defp finalize_local_opponent(state, requester_ticket, opponent_ticket) do
+    case Nearest.take_best_opponent(state, opponent_ticket) do
+      {:ok, final_state} ->
+        finalize_match(requester_ticket, opponent_ticket)
+        final_state
+
+      {:error, :mismatch} ->
+        Logger.debug("Tick local opponent mismatch, re-queueing requester")
+        State.enqueue_front(state, requester_ticket)
+    end
+  end
+
+  defp finalize_remote_opponent(state, requester_ticket, opponent_ticket, remote_pid, epoch) do
+    {opp_user, opp_rank, opp_enq} = opponent_ticket
+
+    case reserve_remote_for_tick(remote_pid, opp_user, opp_rank, opp_enq, epoch) do
+      {:ok, _ticket} ->
+        finalize_match(requester_ticket, opponent_ticket)
+        state
+
+      {:error, _reason} ->
+        Logger.debug("Tick remote reserve failed, re-queueing requester")
+        State.enqueue_front(state, requester_ticket)
+    end
+  end
+
+  defp reserve_remote_for_tick(remote_pid, user_id, rank, enq_ms, epoch) do
+    try do
+      __MODULE__.reserve(remote_pid, user_id, rank, enq_ms, epoch)
+    catch
+      :exit, _ ->
+        Logger.debug("Tick remote reserve RPC failed")
+        {:error, :rpc_failed}
     end
   end
 
