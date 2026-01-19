@@ -6,6 +6,8 @@ defmodule QueueOfMatchmaking.Web.Socket do
   use Phoenix.Socket
   use Absinthe.Phoenix.Socket, schema: QueueOfMatchmaking.Graphql.Schema
 
+  channel("__absinthe__:*", Absinthe.Phoenix.Channel)
+
   def connect(_params, socket, _connect_info) do
     socket =
       Absinthe.Phoenix.Socket.put_options(socket,
