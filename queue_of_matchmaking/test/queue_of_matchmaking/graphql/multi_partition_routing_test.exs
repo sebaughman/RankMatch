@@ -1,7 +1,6 @@
 defmodule QueueOfMatchmaking.Graphql.MultiPartitionRoutingTest do
   @moduledoc """
   Tests for multi-partition routing correctness.
-  Verifies Phase 4.8: routing to correct partitions across boundaries.
   """
 
   use ExUnit.Case, async: false

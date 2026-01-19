@@ -3,6 +3,7 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
   GraphQL resolver functions for matchmaking mutations.
   """
 
+require Logger
   alias QueueOfMatchmaking.Index.UserIndex
   alias QueueOfMatchmaking.Matchmaking.PartitionWorker
   alias QueueOfMatchmaking.Cluster.Router
@@ -95,6 +96,7 @@ defmodule QueueOfMatchmaking.Graphql.Resolvers do
   end
 
   defp release_and_error(user_id, error_string) do
+    Logger.error("Error enqueuing user #{user_id} - #{error_string}")
     UserIndex.release(user_id)
     {:ok, %{ok: false, error: error_string}}
   end

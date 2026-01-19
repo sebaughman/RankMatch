@@ -1,7 +1,6 @@
 defmodule QueueOfMatchmaking.Graphql.EpochHandlingTest do
   @moduledoc """
   Tests for epoch-carrying resolver flow and stale epoch handling.
-  Verifies Phase 4.7: epoch propagation through resolver -> Router -> PartitionWorker.
   """
 
   use ExUnit.Case, async: false

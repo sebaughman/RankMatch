@@ -1,7 +1,6 @@
 defmodule QueueOfMatchmaking.Cluster.SupervisionTreeTest do
   @moduledoc """
   Tests for supervision tree ordering and startup safety.
-  Verifies Phase 4.6: epoch-safe supervision ordering.
   """
 
   use ExUnit.Case, async: false

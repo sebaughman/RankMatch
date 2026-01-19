@@ -7,8 +7,6 @@ defmodule QueueOfMatchmaking.Graphql.ClosestRankTest do
   use ExUnit.Case, async: false
   import QueueOfMatchmaking.GraphqlCase
 
-  @endpoint QueueOfMatchmaking.Web.Endpoint
-
   setup_all do
     # Restart application to ensure clean state between test modules
     :ok = Application.stop(:queue_of_matchmaking)

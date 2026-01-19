@@ -76,7 +76,7 @@ defmodule QueueOfMatchmaking.GraphqlCase do
   Asserts that a match notification is received on the subscription.
   Returns the match payload.
   """
-  def assert_match_received(expected_subscription_id, timeout \\ 300) do
+  def assert_match_received(_expected_subscription_id, timeout \\ 300) do
     assert_push("subscription:data", push_data, timeout)
 
     assert %{

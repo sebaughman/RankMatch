@@ -14,7 +14,6 @@ defmodule QueueOfMatchmaking.Graphql.CrossPartitionTest do
   import QueueOfMatchmaking.TestHelpers
 
   @endpoint QueueOfMatchmaking.Web.Endpoint
-  @partition_width 500
 
   setup do
     # Restart application before each test to prevent state leakage
@@ -335,8 +334,8 @@ defmodule QueueOfMatchmaking.Graphql.CrossPartitionTest do
           }
         """)
 
-      ref_a = subscribe_to_match(user_a)
-      ref_b = subscribe_to_match(user_b)
+      _ref_a = subscribe_to_match(user_a)
+      _ref_b = subscribe_to_match(user_b)
 
       # Wait long enough for widening to reach cap (500ms) + buffer
       # Even at cap (allowed_diff = 1000), diff of 1101 should not match

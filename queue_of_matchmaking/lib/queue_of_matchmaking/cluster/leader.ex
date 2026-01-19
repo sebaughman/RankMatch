@@ -4,7 +4,7 @@ defmodule QueueOfMatchmaking.Cluster.Leader do
 
   Split-brain limitation: each network partition picks a leader independently.
   When the network heals, the cluster converges. Transient dual leaders are
-  acceptable until a later hardening phase.
+  acceptable until later hardening. TODO...
   """
 
   @doc """
