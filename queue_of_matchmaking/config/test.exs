@@ -1,5 +1,8 @@
 import Config
 
+# Suppress debug logs during tests to reduce noise
+config :logger, level: :warning
+
 config :queue_of_matchmaking, QueueOfMatchmaking.Web.Endpoint,
   http: [port: 4002],
   server: true
@@ -18,6 +21,7 @@ config :queue_of_matchmaking,
   max_scan_ranks: 50,
   rpc_timeout_ms: 100,
   enqueue_timeout_ms: 5000,
+  immediate_match_allowed_diff: 0,
   backpressure: [
     message_queue_limit: 100,
     queued_count_limit: 500

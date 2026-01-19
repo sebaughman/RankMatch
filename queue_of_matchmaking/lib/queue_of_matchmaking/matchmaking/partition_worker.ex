@@ -76,6 +76,7 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   def init({partition_id, range_start, range_end, epoch, config}) do
     state = State.new(partition_id, range_start, range_end, epoch, config)
     schedule_tick(config.tick_interval_ms)
+    Logger.info("Partition started: id=#{partition_id} range=#{range_start}..#{range_end} epoch=#{epoch}")
     {:ok, state}
   end
 
@@ -146,6 +147,7 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
 
   @impl true
   def handle_info(:tick, state) do
+    # Logger.info("Tick: partition=#{state.partition_id} queued=#{state.queued_count}")
     new_state = process_tick(state)
     schedule_tick(state.config.tick_interval_ms)
     {:noreply, new_state}
@@ -169,18 +171,25 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
     end
   end
 
-  defp attempt_immediate_match({user_id, _rank, _enq} = ticket, state) do
-    case Nearest.peek_best_opponent(state, ticket, 0, user_id) do
+  defp attempt_immediate_match({user_id, rank, _enq} = ticket, state) do
+    allowed_diff = state.config.immediate_match_allowed_diff || 100
+
+    case Nearest.peek_best_opponent(state, ticket, allowed_diff, user_id) do
       nil ->
+        # Logger.info("User enqueued: user_id=#{user_id} rank=#{rank} partition=#{state.partition_id}")
         {:ok, State.enqueue(state, ticket)}
 
       opponent_ticket ->
         case Nearest.take_best_opponent(state, opponent_ticket) do
           {:ok, new_state} ->
+            {opp_user, opp_rank, _} = opponent_ticket
+            diff = abs(rank - opp_rank)
+            Logger.info("MATCHED (Immediate): user1=#{user_id} rank1=#{rank} user2=#{opp_user} rank2=#{opp_rank} diff=#{diff}")
             finalize_match(ticket, opponent_ticket)
             {:ok, new_state}
 
           {:error, :mismatch} ->
+            Logger.info("User enqueued: user_id=#{user_id} rank=#{rank} partition=#{state.partition_id}")
             {:ok, State.enqueue(state, ticket)}
         end
     end
@@ -235,7 +244,21 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   end
 
   defp peek_adjacent_for_tick({user_id, rank, _}, allowed_diff, state) do
-    {left_pid, right_pid} = Router.adjacent_partitions(rank)
+    # Optimization: only query adjacent partitions if allowed_diff could cross boundaries
+    left_pid = if rank - allowed_diff < state.range_start do
+      {left, _} = Router.adjacent_partitions(rank)
+      left
+    else
+      nil
+    end
+
+    right_pid = if rank + allowed_diff > state.range_end do
+      {_, right} = Router.adjacent_partitions(rank)
+      right
+    else
+      nil
+    end
+
     peek_adjacent_partitions(left_pid, right_pid, {user_id, rank, 0}, allowed_diff, state.epoch)
   end
 
@@ -285,6 +308,10 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
   defp finalize_local_opponent(state, requester_ticket, opponent_ticket) do
     case Nearest.take_best_opponent(state, opponent_ticket) do
       {:ok, final_state} ->
+        {req_user, req_rank, _} = requester_ticket
+        {opp_user, opp_rank, _} = opponent_ticket
+        diff = abs(req_rank - opp_rank)
+        Logger.info("MATCHED (tick): user1=#{req_user} rank1=#{req_rank} user2=#{opp_user} rank2=#{opp_rank} diff=#{diff}")
         finalize_match(requester_ticket, opponent_ticket)
         final_state
 
@@ -299,6 +326,9 @@ defmodule QueueOfMatchmaking.Matchmaking.PartitionWorker do
 
     case reserve_remote_for_tick(remote_pid, opp_user, opp_rank, opp_enq, epoch) do
       {:ok, _ticket} ->
+        {req_user, req_rank, _} = requester_ticket
+        diff = abs(req_rank - opp_rank)
+        Logger.info("MATCHED (tick): user1=#{req_user} rank1=#{req_rank} user2=#{opp_user} rank2=#{opp_rank} diff=#{diff}")
         finalize_match(requester_ticket, opponent_ticket)
         state
 

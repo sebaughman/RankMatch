@@ -17,6 +17,7 @@ defmodule QueueOfMatchmaking.Config do
       widening_step_diff: Application.fetch_env!(:queue_of_matchmaking, :widening_step_diff),
       widening_cap: Application.fetch_env!(:queue_of_matchmaking, :widening_cap),
       enqueue_timeout_ms: Application.fetch_env!(:queue_of_matchmaking, :enqueue_timeout_ms),
+      immediate_match_allowed_diff: Application.fetch_env!(:queue_of_matchmaking, :immediate_match_allowed_diff),
       backpressure: %{
         message_queue_limit: Keyword.fetch!(backpressure, :message_queue_limit),
         queued_count_limit: Keyword.fetch!(backpressure, :queued_count_limit)
